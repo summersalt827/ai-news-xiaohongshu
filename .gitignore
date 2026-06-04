@@ -1,0 +1,28 @@
+# 环境变量
+.env
+.env.local
+.env.*.local
+
+# 输出文件
+daily/
+logs/
+xiaohongshu/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 配置文件（含密钥）
+run_ai_news.sh
