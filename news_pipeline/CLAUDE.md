@@ -2,11 +2,15 @@
 
 ## 概述
 
-从 163 邮箱拉取 AINews 邮件 → 翻译 → 全网多源抓取 → Claude 精选内容 → 输出到 xhs_publish。
+从邮箱拉取 AI 新闻邮件 → 翻译 → 全网多源抓取 → Claude 精选内容 → 输出到 xhs_publish。
 
 两种发布场景：
 - **周一至周五**：精选 4 条 AI 新闻 + 1 条 GitHub 项目 → AI News 日报格式
 - **周六/周日**：单主题深度内容 → AI Skills 长图文格式
+
+**每次精选前必读** `.claude/preferences.md` — 用户的内容偏好和过滤规则。偏好文件改语料，不改代码。
+
+**看到好的小红书样式时说「参考这个样式」** → 触发 `.claude/skills/style-reference.md` 自动提取设计 token + 生成 HTML。
 
 ## 文件夹结构
 
