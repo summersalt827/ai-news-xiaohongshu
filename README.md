@@ -20,7 +20,7 @@
 | yt-dlp | ⚠️ 仅 YouTube | `brew install yt-dlp` |
 | FFmpeg | ⚠️ 仅 YouTube / 视频 | `brew install ffmpeg` |
 | openai-whisper | ⚠️ 仅 YouTube（无字幕时） | `pipx install openai-whisper` |
-| 163 邮箱 + IMAP | ⚠️ 仅 AI News | 登录 163 网页 → 设置 → 开启 IMAP → 生成授权码 |
+| 邮箱 + IMAP | ⚠️ 仅 AI News | 163 / Gmail / QQ 均可，需开启 IMAP 生成授权码 |
 
 ---
 
@@ -49,8 +49,8 @@ cp .env.example .env
 | 变量 | 必填 | 说明 |
 |------|------|------|
 | `ANTHROPIC_API_KEY` | ✅ | Claude API key，推荐 `deepseek-v4-pro[1m]` |
-| `EMAIL_163_USER` | 仅 AI News | 163 邮箱地址 |
-| `EMAIL_163_PASS` | 仅 AI News | 163 IMAP **授权码**（不是登录密码） |
+| `EMAIL_163_USER` | 仅 AI News | 邮箱地址（163 / Gmail / QQ 均可） |
+| `EMAIL_163_PASS` | 仅 AI News | 邮箱 IMAP **授权码**（不是登录密码） |
 | `GITHUB_TOKEN` | 可选 | 提高 GitHub API 频率限制 |
 
 > **注意**：默认 API 后端是 `https://api.deepseek.com/anthropic`，模型是 `deepseek-v4-pro[1m]`。想用 Anthropic 官方，设置 `ANTHROPIC_BASE_URL=https://api.anthropic.com` 和 `ANTHROPIC_MODEL=claude-sonnet-4-6`。
@@ -70,11 +70,13 @@ cp .env.example .env
 
 ### 前置准备
 
-需要 163 邮箱开通 IMAP：
-1. 登录 [mail.163.com](https://mail.163.com)
-2. 设置 → POP3/SMTP/IMAP → 开启 IMAP 服务
-3. 生成**授权码**（一串字母，不是登录密码）
-4. 把授权码填入 `.env` 的 `EMAIL_163_PASS`
+订阅一份 AI 新闻邮件（如 [AINews](https://buttondown.email/ainews)、[TLDR AI](https://tldr.tech/ai)、[The Batch](https://www.deeplearning.ai/the-batch/) 等），然后配置邮箱 IMAP：
+
+1. 登录邮箱网页版（163 / Gmail / QQ 均可）
+2. 设置 → 开启 IMAP 服务 → 生成**授权码**
+3. 把邮箱地址和授权码填入 `.env` 的 `EMAIL_163_USER` / `EMAIL_163_PASS`
+
+> **注意**：脚本默认搜索标题含 `[AINews]` 的邮件。如果你订阅的是其他 Newsletter，修改 `news_pipeline/fetch_ai_news.py` 顶部的 `SEARCH_SUBJECT` 变量即可。
 
 ### 第一次运行
 
@@ -204,7 +206,7 @@ ai-news-xiaohongshu/
 ## FAQ
 
 **Q: 一定要用 163 邮箱吗？**
-A: AI News 引擎需要。你也可以改成 Gmail（Python `imaplib` 支持所有 IMAP 邮箱）。YouTube 蒸馏器不需要邮箱。
+A: 不用，任何支持 IMAP 的邮箱都行（Gmail、QQ、163 等）。脚本用 Python 标准库 `imaplib`，配置 IMAP 服务器地址和端口即可。YouTube 蒸馏器不需要邮箱。
 
 **Q: 能用其他 AI 模型吗？**
 A: 能。设置 `ANTHROPIC_BASE_URL` 和 `ANTHROPIC_MODEL` 即可，兼容 deepseek、OpenRouter 等所有 Anthropic-兼容 API。
