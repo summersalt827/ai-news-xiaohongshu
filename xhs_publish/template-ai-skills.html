@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>AI Skills 深度模板</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap');
+
+  :root{
+    --bg: #F6F2E9;
+    --purple: #5B4FE9;
+    --purple-light: #E7E4FB;
+    --text-gray: #C9C4B8;
+    --text-dark: #2A2A2A;
+    --text-sub: #6B6B6B;
+    --card-bg: #FFFFFF;
+    --card-border: #ECE7DA;
+    --num1: #5B4FE9;
+    --num2: #3B82C4;
+    --num3: #2FA37A;
+    --num4: #E0A93B;
+    --num5: #E0679B;
+  }
+
+  *{ box-sizing: border-box; margin:0; padding:0; }
+
+  body{
+    background: var(--bg);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+    display:flex;
+    justify-content:center;
+  }
+
+  .canvas{
+    width: 900px;
+    background: var(--bg);
+    position: relative;
+    overflow: hidden;
+    padding-bottom: 60px;
+  }
+
+  .topbar{
+    height: 8px;
+    background: var(--purple);
+    width: 100%;
+  }
+
+  .deco-circle{
+    position: absolute;
+    border: 1px solid #E3DDCB;
+    border-radius: 50%;
+  }
+  .deco-1{ width: 420px; height: 420px; top: -220px; right: -160px; }
+  .deco-2{ width: 260px; height: 260px; top: -60px; right: 60px; }
+  .deco-3{ width: 300px; height: 300px; bottom: -180px; left: -160px; }
+
+  .dots{
+    position:absolute;
+    top: 48px; right: 60px;
+    display: grid;
+    grid-template-columns: repeat(6, 10px);
+    grid-gap: 10px;
+    z-index: 2;
+  }
+  .dots span{
+    width: 5px; height: 5px;
+    border-radius: 50%;
+    background: #CFC9B8;
+  }
+
+  .content{
+    position: relative;
+    z-index: 3;
+    padding: 70px 68px 0 68px;
+  }
+
+  .eyebrow{
+    display:flex;
+    align-items:center;
+    gap: 10px;
+    color: var(--purple);
+    font-weight: 700;
+    font-size: 16px;
+    letter-spacing: 0.5px;
+    margin-bottom: 26px;
+  }
+  .eyebrow .dash{
+    width: 22px; height: 2px;
+    background: var(--purple);
+    display:inline-block;
+  }
+
+  .headline{
+    font-size: 58px;
+    font-weight: 900;
+    line-height: 1.18;
+    color: var(--text-gray);
+    letter-spacing: -1px;
+  }
+  .headline .accent{
+    color: var(--purple);
+  }
+
+  .highlight-wrap{
+    margin-top: 8px;
+  }
+  .highlight{
+    display:inline-block;
+    background: var(--purple);
+    color: #fff;
+    font-size: 58px;
+    font-weight: 800;
+    font-style: normal;
+    padding: 6px 26px 12px 26px;
+    line-height: 1.15;
+  }
+
+  .framework{
+    margin-top: 64px;
+    display:flex;
+    align-items:center;
+    gap: 34px;
+  }
+  .big-num{
+    font-size: 160px;
+    font-weight: 800;
+    line-height: 1;
+    color: transparent;
+    -webkit-text-stroke: 3px var(--purple);
+    font-family: 'Inter', sans-serif;
+  }
+  .framework-text .line1{
+    color: var(--purple);
+    font-weight: 800;
+    font-size: 26px;
+    margin-bottom: 10px;
+  }
+  .framework-text .line2,
+  .framework-text .line3{
+    color: var(--text-sub);
+    font-weight: 600;
+    font-size: 24px;
+    line-height: 1.5;
+  }
+
+  .steps{
+    margin-top: 58px;
+    display:flex;
+    flex-direction:column;
+    gap: 18px;
+  }
+  .step-card{
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: 14px;
+    padding: 22px 26px;
+    display:flex;
+    align-items:flex-start;
+    gap: 20px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.02);
+  }
+  .step-num{
+    flex: 0 0 auto;
+    width: 34px; height: 34px;
+    border-radius: 50%;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-weight: 800;
+    font-size: 17px;
+    color: #fff;
+    margin-top: 2px;
+  }
+  .step-card:nth-child(1) .step-num{ background: var(--num1); }
+  .step-card:nth-child(2) .step-num{ background: var(--num2); }
+  .step-card:nth-child(3) .step-num{ background: var(--num3); }
+  .step-card:nth-child(4) .step-num{ background: var(--num4); }
+  .step-card:nth-child(5) .step-num{ background: var(--num5); }
+
+  .step-title{
+    font-size: 21px;
+    font-weight: 800;
+    color: var(--text-dark);
+    margin-bottom: 6px;
+  }
+  .step-sub{
+    font-size: 15px;
+    color: #9A9689;
+    font-weight: 500;
+  }
+
+  .compare{
+    margin-top: 66px;
+    display:flex;
+    align-items:center;
+    justify-content: space-between;
+    padding: 0 20px;
+  }
+  .compare-col{
+    text-align:center;
+  }
+  .compare-col .label{
+    font-size: 34px;
+    font-weight: 800;
+  }
+  .compare-col.before .label{ color: var(--text-gray); }
+  .compare-col.after .label{ color: var(--purple); }
+  .compare-col .sub{
+    margin-top: 10px;
+    font-size: 15px;
+    color: #9A9689;
+    font-weight: 600;
+  }
+  .arrow{
+    font-size: 30px;
+    color: var(--text-gray);
+    font-weight: 700;
+  }
+
+  .footer-note{
+    text-align: center;
+    margin-top: 30px;
+    font-size: 15px;
+    color: #B4AEA0;
+    font-weight: 600;
+  }
+</style>
+</head>
+<body>
+<!-- 内容区 -->
+</body>
+</html>

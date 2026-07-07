@@ -1,0 +1,10 @@
+# ── 核心依赖（两个 Skill 都需要）──────────────────────────
+playwright>=1.40        # Chrome 截图 + 小红书自动发布
+Pillow>=10.0            # 封面图合成
+
+# ── AI News 发布引擎 额外依赖 ──────────────────────────────
+# （无额外 Python 包，urllib 直接调 Claude API）
+
+# ── YouTube 蒸馏器 额外依赖 ────────────────────────────────
+# yt-dlp 和 whisper 是命令行工具，不是 Python 包
+# 请用 pipx 或 brew 安装（见 README）

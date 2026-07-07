@@ -26,3 +26,9 @@ venv/
 
 # 配置文件（含密钥）
 run_ai_news.sh
+
+# Playwright 浏览器数据（含 cookie）
+.playwright-data/
+
+# 背景音乐
+bgm/

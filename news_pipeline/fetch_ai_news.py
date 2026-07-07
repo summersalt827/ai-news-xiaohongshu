@@ -22,6 +22,8 @@ import imaplib
 import json
 import os
 import re
+
+os.environ["no_proxy"] = "*"  # 禁用系统代理，直连（走 Clash Verge 代理反而 TLS 握手失败）
 import shutil
 import ssl
 import sys
@@ -33,8 +35,9 @@ from email.utils import parsedate_to_datetime
 from html.parser import HTMLParser
 from pathlib import Path
 
-# 项目路径
-PROJECT_DIR = Path(__file__).resolve().parent  # ai_news_translation 文件夹
+# 项目路径 — fetch_ai_news.py 在 news_pipeline/ 下，PROJECT_DIR 指向上级
+PROJECT_DIR = Path(__file__).resolve().parent.parent  # ai-news-xiaohongshu 根目录
+sys.path.insert(0, str(PROJECT_DIR))  # 让 xhs_publish/ 模块可导入
 CLAUDE_TEST = Path.home() / "Desktop" / "claude-test"  # claude-test 项目
 DAILY_DIR = PROJECT_DIR / "daily"
 LOG_DIR = PROJECT_DIR / "logs"
@@ -377,18 +380,24 @@ def _search_ai_news_emails(conn: imaplib.IMAP4_SSL) -> list[dict]:
         if results:
             print(f"  {folder}: {len(results)} 封匹配邮件")
 
-    # 只保留今天的邮件
+    # 优先今天的邮件；今天没有则往前追溯最近日期的邮件
     today_utc = date.today()
-    today_results: list[dict] = []
-    for r in all_results:
-        mail_date = r["date"].date() if r["date"] else today_utc
-        if mail_date == today_utc:
-            today_results.append(r)
+    all_results.sort(key=lambda x: x["date"], reverse=True)
 
-    # 按日期排序，取最多 3 封 AINews + 不限数量的 Twitter Recap
-    today_results.sort(key=lambda x: x["date"], reverse=True)
-    twitter_recaps = [r for r in today_results if "twitter recap" in r["subject"].lower()]
-    non_recaps = [r for r in today_results if "twitter recap" not in r["subject"].lower()]
+    today_results = [r for r in all_results
+                     if (r["date"].date() if r["date"] else today_utc) == today_utc]
+
+    # 今天有邮件用今天的，没有则取最新日期的那批
+    if today_results:
+        candidates = today_results
+    else:
+        candidates = all_results
+        if candidates:
+            latest_date = candidates[0]["date"].date()
+            candidates = [r for r in candidates if r["date"].date() == latest_date]
+
+    twitter_recaps = [r for r in candidates if "twitter recap" in r["subject"].lower()]
+    non_recaps = [r for r in candidates if "twitter recap" not in r["subject"].lower()]
     return non_recaps[:3] + twitter_recaps
 
 
@@ -422,7 +431,9 @@ def _send_feishu_text(text: str) -> None:
 
 
 def _send_feishu_rich(title: str, summary: str, url: str) -> None:
-    """发送飞书富文本卡片消息。"""
+    """发送飞书富文本卡片消息。未配置 Webhook 则跳过。"""
+    if not FEISHU_WEBHOOK:
+        return
     payload = {
         "msg_type": "interactive",
         "card": {
@@ -553,6 +564,38 @@ def _build_markdown(emails: list[dict], today: str) -> str:
     return "\n".join(lines)
 
 
+def _generate_combined_caption(
+    items: list[dict], output_dir: Path, date_str: str, emails: list[dict]
+) -> Path:
+    """Generate Xiaohongshu caption file for combined items."""
+    date_display = date.fromisoformat(date_str).strftime("%Y年%m月%d日")
+    email_subject = emails[0]["subject"] if emails else "AI News"
+    # Strip [AINews] prefix
+    email_subject = email_subject.replace("[AINews]", "").strip().strip(":").strip()
+
+    lines = [f"🤖 AI 小白速览 | {date_display}"]
+    lines.append("")
+    for i, item in enumerate(items, 1):
+        emoji = item.get("emoji", "📌")
+        title = item.get("title", "")
+        summary = item.get("summary", "")
+        source = item.get("source_note", "")
+        lines.append(f"{i}️⃣ {emoji} {title}")
+        lines.append(f"   {summary}")
+        if source:
+            lines.append(f"   📍 {source}")
+        lines.append("")
+
+    lines.append("—")
+    lines.append(f"📧 邮件来源: {email_subject}")
+    lines.append("")
+    lines.append("#AI新闻 #小白必看 #人工智能 #科技资讯 #每日AI")
+
+    caption_path = output_dir / f"{date_str}_caption.txt"
+    caption_path.write_text("\n".join(lines), encoding="utf-8")
+    return caption_path
+
+
 # ── Main ─────────────────────────────────────────────────────
 
 def main() -> None:
@@ -576,38 +619,144 @@ def main() -> None:
         )
         return
 
+    # 用邮件实际日期作为 effective date，而非今天
+    effective_date = emails[0]["date"].strftime("%Y-%m-%d") if emails[0]["date"] else today
+    print(f"  effective date: {effective_date}")
+
     # ── Step 1: 翻译所有邮件 ──────────────────────────────
     for i, mail in enumerate(emails, 1):
         print(f"  翻译中... (邮件 {i}/{len(emails)}: {mail['subject'][:40]})")
         mail["translated_body"] = translate_with_claude(mail["body"], mail["subject"])
 
+    # 收集合并后的翻译文本（供后续 enrich + distill 使用）
+    merged_translated = "\n\n---\n\n".join(
+        m.get("translated_body", m["body"]) for m in emails
+    )
+    primary_subject = emails[0]["subject"]
+
+    # ── Step 1.5: 全网抓取 (所有信息源) ──────────────────
+    print("  全网抓取 AI 新闻...")
+    web_items_raw: list[dict] = []
+    try:
+        from web_scraper import scrape_broad_ai_news
+        web_items_raw = scrape_broad_ai_news()
+        print(f"  网页抓取: {len(web_items_raw)} 条")
+    except Exception as exc:
+        print(f"  网页抓取失败 (不阻塞): {exc}")
+
+    # ── Step 1.6: Claude 精选 4 条 AI 新闻 ────────────────
+    print("  精选 4 条 AI 新闻...")
+    ai_items: list[dict] = []
+    try:
+        from item_matcher import curate_from_all_sources
+        ai_items = curate_from_all_sources(merged_translated, web_items_raw)
+        print(f"  AI 新闻: {len(ai_items)} 条")
+    except Exception as exc:
+        print(f"  精选失败 (不阻塞): {exc}")
+
+    # ── Step 1.7: GitHub Trending (1条) ────────────────────
+    print("  GitHub Trending...")
+    github_items: list[dict] = []
+    try:
+        from github_trending import fetch_trending_repos, pick_best_github
+        repos = fetch_trending_repos()
+        if repos:
+            github_items = pick_best_github(repos)
+            print(f"  GitHub: {len(github_items)} 条")
+    except Exception as exc:
+        print(f"  GitHub Trending 失败 (不阻塞): {exc}")
+
+    # ── Step 1.8: 精选结果 (自动确认) ──────────────────────
+    from item_matcher import format_confirmation_prompt
+    print(format_confirmation_prompt(ai_items, github_items))
+    print("  ✅ 自动确认全部\n")
+
+    # ── Step 1.9: 生成小红书卡片 + 封面 + PNG ────────────────
+    card_html_paths: list[Path] = []
+    all_card_pngs: list[Path] = []
+    video_path: Path | None = None
+    xhs_output_dir = XHS_DIR / effective_date
+    combined_items = github_items + ai_items  # GitHub 置顶
+    if combined_items:
+        print(f"  生成小红书卡片 ({len(combined_items)}张)...")
+        try:
+            from xhs_publish.render_combined import save_cards_and_cover, screenshot_htmls
+            xhs_output_dir.mkdir(parents=True, exist_ok=True)
+
+            # 1. 生成卡片 + 封面（封面只用 AI items，不含 GitHub）
+            card_html_paths, cover_path, caption_path = save_cards_and_cover(
+                combined_items, xhs_output_dir, effective_date,
+                cover_items=ai_items,
+            )
+            print(f"  卡片 HTML: {len(card_html_paths)} 张")
+            print(f"  封面 HTML: {cover_path}")
+            print(f"  文案: {caption_path}")
+
+            # 1.5 生成 B站 16:9 封面
+            from xhs_publish.render_video import _render_cover_html
+            cover_bili_html = _render_cover_html(ai_items, effective_date, aspect="16:9")
+            cover_bili_path = xhs_output_dir / f"{effective_date}_cover_bilibili.html"
+            cover_bili_path.write_text(cover_bili_html, encoding="utf-8")
+
+            # 2. HTML → PNG (封面 + B站封面 + 所有卡片)
+            all_htmls = [cover_path, cover_bili_path] + card_html_paths
+            all_card_pngs = screenshot_htmls(all_htmls, xhs_output_dir)
+            print(f"  截图 PNG: {len(all_card_pngs)} 张 (含B站封面)")
+
+            # 3. 同步封面 HTML 到 Vercel
+            cover_public = PUBLIC_DIR / f"{effective_date}_cover.html"
+            shutil.copy2(cover_path, cover_public)
+
+            # 4. 生成视频 (B站 16:9 + 小红书 9:16)
+            video_path = None
+            try:
+                from xhs_publish.render_video import render_video_from_items
+                # BGM: first available mp3 in bgm/ dir
+                _bgm_dir = PROJECT_DIR / "bgm"
+                _bgm_files = sorted(_bgm_dir.glob("*.mp3")) if _bgm_dir.is_dir() else []
+                _bgm = str(_bgm_files[0]) if _bgm_files else ""
+                video_16x9 = render_video_from_items(combined_items, xhs_output_dir,
+                                                     effective_date, aspect="16:9",
+                                                     bgm_path=_bgm)
+                print(f"  视频(16:9): {video_16x9}")
+                video_9x16 = render_video_from_items(combined_items, xhs_output_dir,
+                                                     effective_date, aspect="9:16",
+                                                     bgm_path=_bgm)
+                print(f"  视频(9:16): {video_9x16}")
+                video_path = video_16x9  # primary output for logging
+            except Exception as exc:
+                print(f"  视频生成失败 (不阻塞): {exc}")
+                video_path = None
+        except Exception as exc:
+            print(f"  卡片生成失败 (不阻塞): {exc}")
+
     # ── Step 2: 生成 Markdown 存档 ────────────────────────
     print("  生成 Markdown 存档...")
-    md_content = _build_markdown(emails, today)
+    md_content = _build_markdown(emails, effective_date)
     DAILY_DIR.mkdir(parents=True, exist_ok=True)
-    md_path = DAILY_DIR / f"{today}.md"
+    md_path = DAILY_DIR / f"{effective_date}.md"
     md_path.write_text(md_content, encoding="utf-8")
     print(f"  已保存: {md_path}")
 
     # ── Step 3: 生成 HTML 展示页 ──────────────────────────
     print("  生成 HTML 展示页...")
-    from render_html import save_html
+    from xhs_publish.render_html import save_html
 
-    html_path = save_html(emails, DAILY_DIR, today)
+    html_path = save_html(emails, DAILY_DIR, effective_date)
     print(f"  HTML 已保存: {html_path}")
 
     # 复制到 public/ai-news/ 供 Vercel 部署
     PUBLIC_DIR.mkdir(parents=True, exist_ok=True)
-    public_html = PUBLIC_DIR / f"{today}.html"
+    public_html = PUBLIC_DIR / f"{effective_date}.html"
     shutil.copy2(html_path, public_html)
     _update_index_json()
     print(f"  已复制到 Vercel public 目录: {public_html}")
 
-    html_url = f"{VERCEL_URL.rstrip('/')}/ai-news/{today}.html"
+    html_url = f"{VERCEL_URL.rstrip('/')}/ai-news/{effective_date}.html"
 
     # ── Step 4: 生成小红书内容 ────────────────────────────
     print("  生成小红书图文...")
-    from render_xiaohongshu import save_xiaohongshu
+    from xhs_publish.render_xiaohongshu import save_xiaohongshu
 
     # 收集所有翻译块供小红书图片使用
     all_blocks: list[dict] = []
@@ -617,12 +766,24 @@ def main() -> None:
             b["title"] = mail["subject"]  # 用邮件标题作为卡片标题
         all_blocks.extend(blocks[:3])  # 每封邮件最多3个块
 
-    xhs_output_dir = XHS_DIR / today
-    img_path, caption_path = save_xiaohongshu(emails, all_blocks, xhs_output_dir, today)
+    img_path, caption_path = save_xiaohongshu(emails, all_blocks, xhs_output_dir, effective_date)
+
+    # ── Step 4.5: 自动发布到小红书 ────────────────────────
+    try:
+        publish_script = PROJECT_DIR / "xhs_publish" / "publish_xiaohongshu_auto.py"
+        if publish_script.exists():
+            import subprocess as _sp
+            print("  启动自动发布...")
+            _sp.Popen(
+                [sys.executable, str(publish_script), effective_date],
+                stdout=_sp.DEVNULL, stderr=_sp.DEVNULL,
+            )
+    except Exception as exc:
+        print(f"  启动发布失败 (不阻塞): {exc}")
 
     # ── Step 5: 推送到飞书 ────────────────────────────────
     print("  推送到飞书...")
-    date_display = date.fromisoformat(today).strftime("%Y年%m月%d日")
+    date_display = date.fromisoformat(effective_date).strftime("%Y年%m月%d日")
     summary_lines = [
         f"共 {len(emails)} 封 AI News 邮件",
         "",
@@ -635,7 +796,12 @@ def main() -> None:
 
     summary_lines.append("---")
     summary_lines.append(f"双语完整版: {html_url}")
-    summary_lines.append(f"Markdown 存档: daily/{today}.md")
+    if all_card_pngs:
+        cover_url = f"{VERCEL_URL.rstrip('/')}/ai-news/{effective_date}_cover.html"
+        summary_lines.append(f"小红书封面: {cover_url}")
+    if video_path:
+        summary_lines.append(f"视频: {video_path}")
+    summary_lines.append(f"Markdown 存档: daily/{effective_date}.md")
 
     summary = "\n".join(summary_lines)
     _send_feishu_rich(
@@ -647,14 +813,19 @@ def main() -> None:
 
     # ── Step 6: 写日志 ───────────────────────────────────
     log_path = LOG_DIR / f"{today}.log"
-    log_path.write_text(
-        f"[{today}] 处理了 {len(emails)} 封 AI news 邮件\n"
-        f"  Markdown: {md_path}\n"
-        f"  HTML: {html_path}\n"
-        f"  HTML URL: {html_url}\n"
-        f"  Xiaohongshu: {xhs_output_dir}\n",
-        encoding="utf-8",
-    )
+    log_lines = [
+        f"[{effective_date}] 处理了 {len(emails)} 封 AI news 邮件",
+        f"  Markdown: {md_path}",
+        f"  HTML: {html_path}",
+        f"  HTML URL: {html_url}",
+        f"  Xiaohongshu: {xhs_output_dir}",
+    ]
+    if all_card_pngs:
+        log_lines.append(f"  卡片 PNG: {len(all_card_pngs)} 张")
+        log_lines.append(f"  卡片目录: {xhs_output_dir}")
+    if video_path:
+        log_lines.append(f"  视频: {video_path}")
+    log_path.write_text("\n".join(log_lines) + "\n", encoding="utf-8")
 
     print(f"\n  {'='*50}")
     print(f"  处理完成!")
@@ -663,6 +834,11 @@ def main() -> None:
     print(f"  HTML (线上): {html_url}")
     print(f"  小红书图片:  {img_path}")
     print(f"  小红书文案:  {caption_path}")
+    if all_card_pngs:
+        print(f"  卡片 PNG:    {len(all_card_pngs)} 张")
+        print(f"  卡片目录:    {xhs_output_dir}")
+    if video_path:
+        print(f"  视频:        {video_path}")
     print(f"  {'='*50}")
 
 
