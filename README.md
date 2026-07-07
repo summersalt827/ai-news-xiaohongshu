@@ -203,6 +203,20 @@ ai-news-xiaohongshu/
 
 ---
 
+## Claude Code Skills（可复用）
+
+本项目附带 3 个 Skill，放到你的 `.claude/skills/` 目录即可使用：
+
+| Skill | 触发词 | 功能 |
+|-------|--------|------|
+| `xhs-content-engine` | "生成 AI 内容工厂卡片" | 把你的自动化管道描述 → 6 张小红书卡片 + 文案 |
+| `style-reference` | "参考这个样式" | 截图 → 提取设计 token → 生成 HTML → 套用 |
+| `preferences` | "多关注 X" / "不要 Y" | 改语料不改代码，内容偏好自动更新 |
+
+安装：复制 `.claude/skills/*.md` 到你的项目的 `.claude/skills/` 目录。
+
+---
+
 ## FAQ
 
 **Q: 一定要用 163 邮箱吗？**
