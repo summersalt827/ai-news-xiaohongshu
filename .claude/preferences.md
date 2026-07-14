@@ -36,3 +36,9 @@
 - 看到好的小红书封面/卡片样式时可以随时参考
 - 说「参考这个样式」+ 截图，自动提取设计 token 生成 HTML
 - 设计 token 存在 design-refs/ 目录，不与业务内容耦合
+
+## 本周选题偏好（AI 自动更新于 YYYY-MM-DD）
+
+_运行 `python3 news_pipeline/analytics_analyzer.py --update-preferences` 后此部分自动更新。_
+
+- 暂未收集到数据，待首次运行 analytics.py 抓取数据后更新

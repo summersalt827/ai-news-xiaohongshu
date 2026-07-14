@@ -33,8 +33,8 @@ TRANSITION = 0.4  # crossfade seconds between scenes
 FPS = 30
 
 ASPECTS = {
-    "16:9": dict(width=1920, height=1080),
-    "9:16": dict(width=1080, height=1920),
+    "16:9": dict(width=3840, height=2160),
+    "9:16": dict(width=2160, height=3840),
 }
 
 FFMPEG_PATH = str(
@@ -142,104 +142,131 @@ def _render_card_html(item: dict, idx: int, total: int,
                                  idx, total, date_disp, gh_badge_html)
 
 
+def _render_info_boxes(items: list) -> str:
+    """Render info-box list for right card."""
+    if not items:
+        return ""
+    parts = []
+    for active, label, text in items:
+        cls = "info-box active" if active else "info-box"
+        parts.append(
+            f'<div class="{cls} anim anim-fade-in delay-4">'
+            f'<span class="label">{label}</span>'
+            f'{html.escape(text)}</div>'
+        )
+    return "".join(parts)
+
+
+def caption_pill_html(text: str) -> str:
+    """Bottom caption pill."""
+    if not text:
+        return ""
+    return f'<div class="caption-pill anim anim-slide-up delay-5">{text}</div>'
+
+
 def _render_card_16x9(w, h, emoji, title, summary, detail, why_care,
                       source, kps, kp_html, idx, total, date_disp,
                       gh_badge_html="") -> str:
-    """Dark briefing style — macOS window chrome, white card, caption pill."""
+    """Design-doc style — light gradient bg, blue/teal palette, hard-shadow cards."""
     is_github = bool(gh_badge_html)
-    accent = "#d64545" if is_github else "#e08e2b"
     cat_label = "GitHub 热门" if is_github else "AI 要闻"
-    cat_emoji = "⭐" if is_github else "🧠"
-    cat_class = "type-red" if is_github else "type-orange"
+    cat_class = "type-green" if is_github else "type-blue"
+    accent_color = "#1ca77a" if is_github else "#1d6fb5"
+    card_accent_bg = "#e8f5e9" if is_github else "#e8f0fa"
 
-    # Key points as bullet list items
-    kp_items = ""
-    if kps:
-        for pt in kps[:3]:
-            kp_items += f"<li>{html.escape(pt)}</li>"
+    hl = _split_headline(title)
+    hl_title = hl.get("cn_punchline", title)
 
-    # Build the info bullets from summary + why_care
-    bullets = f"<li>{summary}</li>"
-    if detail and detail != summary:
-        bullets += f"<li>{detail}</li>"
+    # Card scale: use w/2400 to fit content within fixed 16:9 frame
+    fs = lambda base: int(base * w / 2400)
+
+    # Map content to input-box style items (dynamic, no text truncation)
+    info_items = []
+    if summary:
+        info_items.append((True, "发生了什么？", summary))
     if why_care:
-        bullets += f"<li>{why_care}</li>"
+        info_items.append((False, "为什么值得关注", why_care))
 
-    # Window dimensions
-    win_w = 1500
-    win_h = 960
-    tb_h = 36
-    tab_h = 42
-    tag_h = 38
-    content_h = win_h - tb_h - tab_h - tag_h  # ~844
+    # Bottom caption from key points (no truncation)
+    caption_text = ""
+    if kps:
+        caption_text = html.escape(kps[0])
+
+    # Left card content (no truncation)
+    left_title_short = hl.get("cn_keyword", title)
+    left_sub = hl.get("en_keyword", cat_label)
 
     return f"""<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
 <style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Noto+Sans+SC:wght@500;700;900&display=swap');
 *{{margin:0;padding:0;box-sizing:border-box}}
-body{{width:{w}px;height:{h}px;overflow:hidden;font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;
-  background:#0e0e10;color:#1c1c1e;
-  display:flex;align-items:center;justify-content:center;-webkit-font-smoothing:antialiased}}
-.window{{width:{win_w}px;height:{win_h}px;border-radius:14px;overflow:hidden;
-  box-shadow:0 20px 60px rgba(0,0,0,0.45);display:flex;flex-direction:column}}
-/* titlebar */
-.tb{{display:flex;align-items:center;gap:8px;padding:0 16px;height:{tb_h}px;background:#1a1a1c;flex-shrink:0}}
-.dot{{width:12px;height:12px;border-radius:50%}}
-.dot.r{{background:#ff5f57}}.dot.y{{background:#febc2e}}.dot.g{{background:#28c840}}
-/* tabs */
-.tabs{{display:flex;gap:6px;padding:0 16px;height:{tab_h}px;align-items:center;
-  background:#f4f4f6;flex-shrink:0}}
-.tab{{padding:5px 13px;border-radius:999px;font-size:12px;color:#6b6b70;white-space:nowrap}}
-.tab.active{{background:#2b2b2f;color:#fff;font-weight:600}}
-/* body */
-.bd{{flex:1;background:#f7f7f8;display:flex;flex-direction:column;
-  align-items:center;justify-content:center;padding:28px 48px 52px;position:relative}}
-.bd .card-main-title{{text-align:center;font-size:30px;font-weight:800;line-height:1.3;
-  background:linear-gradient(90deg,#d64545,#e08e2b);-webkit-background-clip:text;
-  background-clip:text;color:transparent;letter-spacing:0.5px;margin-bottom:24px;padding:0 20px}}
-/* card */
-.card{{background:#fff;border-radius:16px;padding:28px 32px;
-  box-shadow:0 2px 12px rgba(0,0,0,0.06);width:100%;max-width:1300px}}
-.card h3{{display:flex;align-items:center;gap:8px;font-size:20px;font-weight:700;margin:0 0 18px}}
-.card h3 .icon-badge{{width:24px;height:24px;border-radius:6px;display:inline-flex;
-  align-items:center;justify-content:center;font-size:14px;color:#fff}}
-.card.type-red h3 .icon-badge{{background:#d64545}}
-.card.type-red h3{{color:#d64545}}
-.card.type-orange h3 .icon-badge{{background:#e08e2b}}
-.card.type-orange h3{{color:#e08e2b}}
-.card ul{{margin:0;padding-left:20px;font-size:17px;line-height:2.0;color:#1c1c1e}}
-.card ul li{{margin-bottom:4px}}
-/* caption pill */
-.caption{{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);
-  background:rgba(20,20,22,0.88);color:#fff;font-size:16px;font-weight:600;
-  padding:10px 28px;border-radius:999px;white-space:nowrap;
-  box-shadow:0 6px 20px rgba(0,0,0,0.3);backdrop-filter:blur(4px)}}
-/* tagbar */
-.tagbar{{display:flex;gap:6px;padding:0 16px;height:{tag_h}px;align-items:center;
-  background:#1a1a1c;border-top:1px solid #2a2a2c;flex-shrink:0}}
-.tagbar span{{padding:3px 10px;border-radius:6px;font-size:11px;color:#ccc;background:#2a2a2c;white-space:nowrap}}
-.footer{{position:absolute;top:14px;right:22px;font-size:12px;color:#9a9a9e;letter-spacing:2px}}
+body{{width:{w}px;height:{h}px;overflow:hidden;
+  font-family:'Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif;
+  background:linear-gradient(90deg,#f9fafb 0%,#ffffff 50%,#f9fafb 100%);
+  color:#163f77;display:flex;align-items:flex-start;justify-content:center;
+  -webkit-font-smoothing:antialiased}}
+.stage{{width:{w}px;height:100%;padding:{fs(60)}px {fs(120)}px;
+  padding-bottom:{fs(100)}px;display:flex;flex-direction:column}}
+.top-row{{display:flex;justify-content:space-between;align-items:center;margin-bottom:{fs(24)}px;flex-shrink:0}}
+.tag{{font-family:'Space Mono',monospace;font-size:{fs(24)}px;font-weight:700;
+  color:#1ca77a;letter-spacing:1px;display:flex;align-items:center;gap:{fs(12)}px}}
+.tag .dot{{width:{fs(16)}px;height:{fs(16)}px;border-radius:50%;background:#1ca77a;display:inline-block;flex-shrink:0}}
+.meta{{font-family:'Space Mono',monospace;font-size:{fs(20)}px;color:#60748a;letter-spacing:1px}}
+.headline{{margin-bottom:{fs(28)}px;flex-shrink:0}}
+.headline h1{{font-size:{fs(84)}px;font-weight:900;color:#124783;line-height:1.08;letter-spacing:-1px}}
+.headline .sub{{font-size:{fs(24)}px;font-weight:600;color:#60748a;margin-top:{fs(10)}px}}
+.two-col{{display:flex;gap:{fs(48)}px;flex:1 1 auto;margin-bottom:{fs(24)}px;min-height:0}}
+.left-card{{width:{fs(480)}px;background:{card_accent_bg};border:4px solid #1c4f8d;
+  border-radius:{fs(20)}px;padding:{fs(32)}px;display:flex;flex-direction:column;
+  box-shadow:{fs(12)}px {fs(12)}px 0 rgba(0,0,0,.07);flex-shrink:0}}
+.left-card .lc-star{{font-family:'Space Mono',monospace;font-size:{fs(20)}px;
+  font-weight:700;color:#1c4f8d;margin-bottom:{fs(28)}px;letter-spacing:1px}}
+.left-card .lc-title{{font-size:{fs(60)}px;font-weight:900;color:#124783;line-height:1.08;word-break:break-word}}
+.left-card .lc-desc{{font-family:'Space Mono',monospace;font-size:{fs(18)}px;
+  color:#138d78;margin-top:{fs(14)}px;font-weight:700;word-break:break-word}}
+.right-card{{flex:1 1 auto;background:#fff;border:4px solid #1c4f8d;border-radius:{fs(20)}px;
+  padding:{fs(28)}px {fs(36)}px;display:flex;flex-direction:column;gap:{fs(14)}px;
+  box-shadow:{fs(12)}px {fs(12)}px 0 rgba(0,0,0,.07);min-height:0;overflow-y:auto}}
+.right-card .rc-title{{font-size:{fs(36)}px;font-weight:900;color:#123e74;
+  margin-bottom:{fs(4)}px;word-break:break-word;flex-shrink:0}}
+.info-box{{border-radius:{fs(10)}px;border:3px solid #e2e8f0;
+  display:flex;align-items:flex-start;padding:{fs(10)}px {fs(18)}px;
+  font-size:{fs(20)}px;font-family:'Space Mono',monospace;color:#475569;
+  word-break:break-word;flex-shrink:0}}
+.info-box.active{{border-color:#1ca77a;color:#178a70}}
+.info-box .label{{font-weight:700;color:{accent_color};margin-right:{fs(8)}px;
+  font-size:{fs(18)}px;white-space:nowrap;font-family:'Noto Sans SC',sans-serif;flex-shrink:0}}
+.rc-footer{{font-family:'Space Mono',monospace;font-size:{fs(16)}px;color:#64748b;
+  margin-top:auto;font-weight:600;flex-shrink:0;padding-top:{fs(8)}px}}
+.caption-pill{{align-self:center;padding:{fs(14)}px {fs(36)}px;
+  border:4px solid #17212d;border-radius:{fs(22)}px;background:#fff;
+  font-size:{fs(24)}px;font-weight:900;color:#17212d;
+  box-shadow:{fs(8)}px {fs(8)}px 0 rgba(0,0,0,.07);text-align:center;
+  flex-shrink:0;word-break:break-word;max-width:{int(w * 0.85)}px;margin-top:{fs(16)}px}}
 {ANIM_CSS}
 </style></head><body>
-<div class="window">
-<div class="tb"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span></div>
-<div class="tabs">
-  <span class="tab active">要闻</span>
-  <span class="tab">模型发布</span><span class="tab">开发生态</span><span class="tab">产品应用</span>
-  <span class="tab">技术与洞察</span><span class="tab">行业动态</span>
+<div class="stage">
+<div class="top-row anim anim-fade-in delay-1">
+  <div class="tag"><span class="dot"></span>{idx:02d} / {cat_label}</div>
+  <div class="meta">{date_disp} · {html.escape(source)}</div>
 </div>
-<div class="bd">
-  <div class="card-main-title anim anim-fade-in delay-1">{title}</div>
-  <div class="card {cat_class} anim anim-scale-in delay-2">
-    <h3><span class="icon-badge">{cat_emoji}</span>{cat_label}</h3>
-    <ul>{bullets}</ul>
+<div class="headline anim anim-slide-l delay-2">
+  <h1>{html.escape(hl_title)}</h1>
+  <div class="sub">{html.escape(summary)}</div>
+</div>
+<div class="two-col">
+  <div class="left-card anim anim-scale-in delay-3">
+    <div class="lc-star">{emoji}</div>
+    <div class="lc-title">{html.escape(left_title_short)}</div>
+    <div class="lc-desc">{html.escape(left_sub)}</div>
   </div>
-  {kp_html}
-  <div class="footer anim anim-fade-in delay-1">{idx:02d} / {total:02d}</div>
+  <div class="right-card anim anim-slide-r delay-3">
+    <div class="rc-title">{html.escape(hl_title)}</div>
+    {_render_info_boxes(info_items)}
+    <div class="rc-footer">{html.escape(source)} · {date_disp}</div>
+  </div>
 </div>
-<div class="tagbar">
-  <span>AI News</span><span>Claude</span><span>开源模型</span>
-  <span>GitHub Trending</span><span>AI Agents</span>
-</div>
+{caption_pill_html(caption_text)}
 </div>
 </body></html>"""
 
@@ -247,91 +274,122 @@ body{{width:{w}px;height:{h}px;overflow:hidden;font-family:-apple-system,'PingFa
 def _render_card_9x16(w, h, emoji, title, summary, detail, why_care,
                       source, kps, kp_html, idx, total, date_disp,
                       gh_badge_html="") -> str:
-    """Dark briefing style for 9:16 vertical — window chrome, white card, caption pill."""
+    """Design-doc style for 9:16 vertical — same palette, stacked layout."""
     is_github = bool(gh_badge_html)
     cat_label = "GitHub 热门" if is_github else "AI 要闻"
-    cat_emoji = "⭐" if is_github else "🧠"
-    cat_class = "type-red" if is_github else "type-orange"
+    card_accent_bg = "#e8f5e9" if is_github else "#e8f0fa"
 
-    bullets = f"<li>{summary}</li>"
+    hl = _split_headline(title)
+    hl_title = hl.get("cn_punchline", title)
+
+    fs = lambda base: int(base * w / 1440)
+
+    info_items = []
+    if summary:
+        info_items.append((True, "发生了什么？", summary))
     if detail and detail != summary:
-        bullets += f"<li>{detail}</li>"
+        info_items.append((False, "深入了解一下", detail))
     if why_care:
-        bullets += f"<li>{why_care}</li>"
+        info_items.append((False, "为什么值得关注", why_care))
 
-    win_w = 1020
-    win_h = 1820
-    tb_h = 36
-    tab_h = 42
-    tag_h = 38
+    caption_text = ""
+    if kps:
+        caption_text = html.escape(kps[0][:48])
+
+    left_sub = hl.get("en_keyword", cat_label)[:28]
 
     return f"""<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
 <style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Noto+Sans+SC:wght@500;700;900&display=swap');
 *{{margin:0;padding:0;box-sizing:border-box}}
-body{{width:{w}px;height:{h}px;overflow:hidden;font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;
-  background:#0e0e10;color:#1c1c1e;
-  display:flex;align-items:center;justify-content:center;-webkit-font-smoothing:antialiased}}
-.window{{width:{win_w}px;height:{win_h}px;border-radius:14px;overflow:hidden;
-  box-shadow:0 20px 60px rgba(0,0,0,0.45);display:flex;flex-direction:column}}
-.tb{{display:flex;align-items:center;gap:8px;padding:0 16px;height:{tb_h}px;background:#1a1a1c;flex-shrink:0}}
-.dot{{width:12px;height:12px;border-radius:50%}}
-.dot.r{{background:#ff5f57}}.dot.y{{background:#febc2e}}.dot.g{{background:#28c840}}
-.tabs{{display:flex;gap:6px;padding:0 16px;height:{tab_h}px;align-items:center;
-  background:#f4f4f6;flex-shrink:0;overflow:hidden}}
-.tab{{padding:5px 11px;border-radius:999px;font-size:11px;color:#6b6b70;white-space:nowrap}}
-.tab.active{{background:#2b2b2f;color:#fff;font-weight:600}}
-.bd{{flex:1;background:#f7f7f8;display:flex;flex-direction:column;
-  align-items:center;justify-content:center;padding:24px 28px 48px;position:relative}}
-.bd .card-main-title{{text-align:center;font-size:24px;font-weight:800;line-height:1.3;
-  background:linear-gradient(90deg,#d64545,#e08e2b);-webkit-background-clip:text;
-  background-clip:text;color:transparent;letter-spacing:0.5px;margin-bottom:20px;padding:0 16px}}
-.card{{background:#fff;border-radius:16px;padding:24px 26px;
-  box-shadow:0 2px 12px rgba(0,0,0,0.06);width:100%}}
-.card h3{{display:flex;align-items:center;gap:8px;font-size:18px;font-weight:700;margin:0 0 16px}}
-.card h3 .icon-badge{{width:22px;height:22px;border-radius:6px;display:inline-flex;
-  align-items:center;justify-content:center;font-size:13px;color:#fff}}
-.card.type-red h3 .icon-badge{{background:#d64545}}
-.card.type-red h3{{color:#d64545}}
-.card.type-orange h3 .icon-badge{{background:#e08e2b}}
-.card.type-orange h3{{color:#e08e2b}}
-.card ul{{margin:0;padding-left:18px;font-size:16px;line-height:2.0;color:#1c1c1e}}
-.card ul li{{margin-bottom:4px}}
-.caption{{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);
-  background:rgba(20,20,22,0.88);color:#fff;font-size:14px;font-weight:600;
-  padding:8px 24px;border-radius:999px;white-space:nowrap;
-  box-shadow:0 6px 20px rgba(0,0,0,0.3);backdrop-filter:blur(4px)}}
-.tagbar{{display:flex;gap:6px;padding:0 16px;height:{tag_h}px;align-items:center;
-  background:#1a1a1c;border-top:1px solid #2a2a2c;flex-shrink:0;overflow:hidden}}
-.tagbar span{{padding:3px 10px;border-radius:6px;font-size:10px;color:#ccc;background:#2a2a2c;white-space:nowrap}}
-.footer{{position:absolute;top:14px;right:20px;font-size:11px;color:#9a9a9e;letter-spacing:2px}}
+body{{width:{w}px;height:{h}px;overflow:hidden;
+  font-family:'Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif;
+  background:linear-gradient(180deg,#f9fafb 0%,#ffffff 50%,#f9fafb 100%);
+  color:#163f77;display:flex;align-items:center;justify-content:center;
+  -webkit-font-smoothing:antialiased}}
+.stage{{width:{w}px;height:{h}px;padding:{fs(80)}px {fs(80)}px {fs(120)}px {fs(80)}px;
+  display:flex;flex-direction:column;position:relative}}
+.top-row{{display:flex;justify-content:space-between;align-items:center;margin-bottom:{fs(40)}px}}
+.tag{{font-family:'Space Mono',monospace;font-size:{fs(24)}px;font-weight:700;
+  color:#1ca77a;letter-spacing:1px;display:flex;align-items:center;gap:{fs(12)}px}}
+.tag .dot{{width:{fs(18)}px;height:{fs(18)}px;border-radius:50%;background:#1ca77a;display:inline-block}}
+.meta{{font-family:'Space Mono',monospace;font-size:{fs(20)}px;color:#60748a;letter-spacing:1px}}
+.headline{{margin-bottom:{fs(50)}px}}
+.headline h1{{font-size:{fs(88)}px;font-weight:900;color:#124783;line-height:1.08;letter-spacing:-1px}}
+.headline .sub{{font-size:{fs(28)}px;font-weight:600;color:#60748a;margin-top:{fs(14)}px}}
+.top-card{{background:{card_accent_bg};border:4px solid #1c4f8d;
+  border-radius:{fs(24)}px;padding:{fs(40)}px;margin-bottom:{fs(36)}px;
+  box-shadow:{fs(14)}px {fs(14)}px 0 rgba(0,0,0,.07);display:flex;align-items:center;gap:{fs(30)}px}}
+.top-card .tc-emoji{{font-size:{fs(56)}px}}
+.top-card .tc-info{{display:flex;flex-direction:column;gap:{fs(8)}px}}
+.top-card .tc-title{{font-size:{fs(40)}px;font-weight:900;color:#124783}}
+.top-card .tc-desc{{font-family:'Space Mono',monospace;font-size:{fs(22)}px;color:#138d78;font-weight:700}}
+.info-card{{background:#fff;border:4px solid #1c4f8d;border-radius:{fs(24)}px;
+  padding:{fs(36)}px {fs(42)}px;display:flex;flex-direction:column;gap:{fs(20)}px;
+  box-shadow:{fs(14)}px {fs(14)}px 0 rgba(0,0,0,.07);flex:1}}
+.info-card .rc-title{{font-size:{fs(46)}px;font-weight:900;color:#123e74;margin-bottom:{fs(6)}px}}
+.ibox{{min-height:{fs(66)}px;border-radius:{fs(14)}px;border:3px solid #e2e8f0;
+  display:flex;align-items:center;padding:{fs(14)}px {fs(22)}px;
+  font-size:{fs(22)}px;font-family:'Space Mono',monospace;color:#475569;flex:1}}
+.ibox.active{{border-color:#1ca77a;color:#178a70}}
+.ibox .label{{font-weight:700;color:#1d6fb5;margin-right:{fs(12)}px;
+  font-size:{fs(20)}px;white-space:nowrap;font-family:'Noto Sans SC',sans-serif}}
+.ibox .label.gh{{color:#1ca77a}}
+.rc-footer{{font-family:'Space Mono',monospace;font-size:{fs(20)}px;color:#64748b;
+  margin-top:{fs(14)}px;font-weight:600}}
+.caption-pill{{align-self:center;padding:{fs(20)}px {fs(44)}px;
+  border:4px solid #17212d;border-radius:{fs(28)}px;background:#fff;
+  font-size:{fs(30)}px;font-weight:900;color:#17212d;
+  box-shadow:{fs(10)}px {fs(10)}px 0 rgba(0,0,0,.07);text-align:center;
+  max-width:{w * 0.8}px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  margin-top:{fs(40)}px}}
 {ANIM_CSS}
 </style></head><body>
-<div class="window">
-<div class="tb"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span></div>
-<div class="tabs">
-  <span class="tab active">要闻</span>
-  <span class="tab">模型</span><span class="tab">生态</span><span class="tab">产品</span>
-  <span class="tab">洞察</span><span class="tab">动态</span>
+<div class="stage">
+<div class="top-row anim anim-fade-in delay-1">
+  <div class="tag"><span class="dot"></span>{idx:02d} / {cat_label}</div>
+  <div class="meta">{date_disp}</div>
 </div>
-<div class="bd">
-  <div class="card-main-title anim anim-fade-in delay-1">{title}</div>
-  <div class="card {cat_class} anim anim-scale-in delay-2">
-    <h3><span class="icon-badge">{cat_emoji}</span>{cat_label}</h3>
-    <ul>{bullets}</ul>
+<div class="headline anim anim-slide-l delay-2">
+  <h1>{html.escape(hl_title)}</h1>
+  <div class="sub">{html.escape(summary[:60])}</div>
+</div>
+<div class="top-card anim anim-scale-in delay-3">
+  <div class="tc-emoji">{emoji}</div>
+  <div class="tc-info">
+    <div class="tc-title">{html.escape(hl.get("cn_keyword", title[:8]))}</div>
+    <div class="tc-desc">{html.escape(left_sub)}</div>
   </div>
-  {kp_html}
-  <div class="footer anim anim-fade-in delay-1">{idx:02d} / {total:02d}</div>
 </div>
-<div class="tagbar">
-  <span>AI News</span><span>Claude</span><span>开源模型</span>
-  <span>GitHub</span><span>Agents</span>
+<div class="info-card anim anim-slide-up delay-3">
+  <div class="rc-title">{cat_label}</div>
+  {_render_info_boxes_9x16(info_items, is_github)}
+  <div class="rc-footer">{html.escape(source[:36])} · {date_disp}</div>
 </div>
+{caption_pill_html(caption_text)}
 </div>
 </body></html>"""
 
 
+def _render_info_boxes_9x16(items, is_github=False):
+    """Render info-box list for 9:16 right card."""
+    if not items:
+        return ""
+    parts = []
+    for active, label, text in items:
+        cls = "ibox active" if active else "ibox"
+        label_cls = "label gh" if is_github else "label"
+        parts.append(
+            f'<div class="{cls} anim anim-fade-in delay-4">'
+            f'<span class="{label_cls}">{label}</span>'
+            f'{html.escape(text[:70])}</div>'
+        )
+    return "".join(parts)
+
+
+
 def _render_cover_html(items: list[dict], date_str: str, aspect: str) -> str:
-    """VerySmallWoods-style cover — cream paper, warm red ink, headline from hottest item."""
+    """Design-doc cover — light gradient, blue/teal, hard-shadow cards."""
     w, h = ASPECTS[aspect]["width"], ASPECTS[aspect]["height"]
     date_obj = date.fromisoformat(date_str)
     date_disp = date_obj.strftime("%Y.%m.%d")
@@ -339,101 +397,72 @@ def _render_cover_html(items: list[dict], date_str: str, aspect: str) -> str:
     n = len(items)
     is_landscape = aspect == "16:9"
 
-    # Headline from hottest item
-    hot = items[0] if items else {}
-    hl = _split_headline(hot.get("title", ""))
-    hot_summary = hot.get("summary", "")
-    hot_why = hot.get("why_care", "")
-    hot_source = hot.get("source_note", "").replace("来源：", "").replace("来源: ", "")[:24]
-    is_gh = "github" in hot.get("source_note", "").lower()
-    tag_label = "GITHUB TRENDING" if is_gh else "AI NEWS DAILY"
-    eyebrow_src = "GitHub 热门" if is_gh else "AI 要闻"
-    quote_text = hot_why if hot_why else hot_summary
+    # Cover uses a tighter scale to fit 6 cards within the fixed frame
+    fs_cover = lambda base: int(base * w / 2400)
 
-    # Colors: warm red/orange from video palette, replacing the blue ink
-    ink = "#d64545"
-    ink_soft = "#c46686"
-    line_color = "rgba(214,69,69,0.35)"
-    grid_color = "rgba(214,69,69,0.08)"
+    # Item preview cards for the grid
+    item_cards = ""
+    for i, item in enumerate(items[:6]):
+        emoji_t = html.escape(item.get("emoji", "📌"))
+        title_t = html.escape(item.get("title", ""))
+        cat = item.get("source_note", "")
+        is_gh = "github" in cat.lower()
+        corner = "⭐" if is_gh else emoji_t
+        item_cards += (
+            f'<div class="icard anim anim-scale-in delay-{3+i}">'
+            f'<div class="ic-emoji">{corner}</div>'
+            f'<div class="ic-title">{title_t}</div>'
+            f'</div>'
+        )
 
-    fs = lambda base: int(base * min(w/1440, h/810))
+    caption_text = f"本周精选 {n} 条 AI 新闻 · 深度解读"
 
     return f"""<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
 <style>
-@import url('https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@1,500;1,600&family=Space+Mono:wght@400;700&family=Noto+Sans+SC:wght@500;700;900&family=Noto+Serif+SC:wght@600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Noto+Sans+SC:wght@500;700;900&display=swap');
 *{{margin:0;padding:0;box-sizing:border-box}}
 body{{width:{w}px;height:{h}px;overflow:hidden;
-  display:flex;align-items:center;justify-content:center;
-  background:#0e0e10;-webkit-font-smoothing:antialiased}}
-.stage{{width:{w}px;height:{h}px;background:#ECE7DA;position:relative;overflow:hidden;
-  background-image:linear-gradient({grid_color} 1px,transparent 1px),
-    linear-gradient(90deg,{grid_color} 1px,transparent 1px);
-  background-size:{fs(36)}px {fs(36)}px;
-  font-family:'Noto Sans SC',sans-serif}}
-.frame{{position:absolute;inset:{fs(36)}px;border:1.5px solid {line_color}}}
-.frame::before,.frame::after{{content:'';position:absolute;width:{fs(14)}px;height:{fs(14)}px;border:1.5px solid {ink}}}
-.frame::before{{top:-1.5px;left:-1.5px;border-right:none;border-bottom:none}}
-.frame::after{{bottom:-1.5px;right:-1.5px;border-left:none;border-top:none}}
-.top-row{{position:absolute;top:{fs(68)}px;left:{fs(100)}px;right:{fs(100)}px;
-  display:flex;justify-content:space-between;align-items:center}}
-.tag{{border:1.5px solid {ink};padding:{fs(6)}px {fs(16)}px;
-  font-family:'Space Mono',monospace;font-size:{fs(14)}px;letter-spacing:2px;color:{ink};white-space:nowrap}}
-.meta{{font-family:'Space Mono',monospace;font-size:{fs(14)}px;letter-spacing:1.5px;color:{ink};white-space:nowrap}}
-.eyebrow{{position:absolute;top:{fs(360)}px;left:{fs(100)}px;
-  font-family:'Space Mono',monospace;font-size:{fs(15)}px;letter-spacing:3px;color:{ink_soft};
-  display:flex;align-items:center;gap:{fs(14)}px;white-space:nowrap}}
-.eyebrow .dot{{color:{ink};opacity:0.6}}
-.headline{{position:absolute;top:{fs(395)}px;left:{fs(96)}px;line-height:1.05;max-width:{w-fs(200)}px}}
-.headline .l1{{display:flex;align-items:baseline;gap:{fs(14)}px;flex-wrap:wrap}}
-.headline .en{{font-family:'EB Garamond',serif;font-style:italic;font-weight:600;
-  font-size:{fs(104)}px;color:{ink};max-width:{w-fs(220)}px;overflow:hidden;text-overflow:ellipsis}}
-.headline .cn-serif{{font-family:'Noto Serif SC','Songti SC',serif;font-style:italic;font-weight:600;
-  font-size:{fs(92)}px;color:{ink};flex-shrink:0}}
-.headline .l2{{font-weight:900;font-size:{fs(76)}px;letter-spacing:2px;color:{ink};margin-top:{fs(6)}px;
-  max-width:{w-fs(200)}px;word-break:break-all}}
-.subline{{position:absolute;top:{fs(640)}px;left:{fs(100)}px;right:{fs(100)}px;
-  font-size:{fs(24)}px;color:{ink};display:flex;align-items:baseline;gap:{fs(10)}px;flex-wrap:wrap}}
-.subline .en{{font-family:'Space Mono',monospace;font-weight:400;font-size:{fs(22)}px;white-space:nowrap}}
-.subline b{{font-weight:900}}
-.subline .sep{{opacity:0.5;margin:0 4px}}
-.bottom-row{{position:absolute;bottom:{fs(66)}px;left:{fs(100)}px;right:{fs(100)}px;
-  display:flex;justify-content:space-between;align-items:flex-end}}
-.quote{{font-size:{fs(16)}px;letter-spacing:1px;color:{ink_soft};max-width:{w*0.6}px}}
-.format{{font-family:'Space Mono',monospace;font-size:{fs(14)}px;letter-spacing:1.5px;color:{ink};
-  display:flex;align-items:center;gap:{fs(10)}px;white-space:nowrap}}
+  font-family:'Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif;
+  background:linear-gradient(90deg,#f9fafb 0%,#ffffff 50%,#f9fafb 100%);
+  color:#163f77;display:flex;align-items:flex-start;justify-content:center;
+  -webkit-font-smoothing:antialiased}}
+.stage{{width:{w}px;height:100%;padding:{fs_cover(50)}px {fs_cover(100)}px;
+  padding-bottom:{fs_cover(80)}px;display:flex;flex-direction:column}}
+.top-row{{display:flex;justify-content:space-between;align-items:center;margin-bottom:{fs_cover(24)}px;flex-shrink:0}}
+.tag{{font-family:'Space Mono',monospace;font-size:{fs_cover(24)}px;font-weight:700;
+  color:#1ca77a;letter-spacing:1px;display:flex;align-items:center;gap:{fs_cover(12)}px}}
+.tag .dot{{width:{fs_cover(16)}px;height:{fs_cover(16)}px;border-radius:50%;background:#1ca77a;display:inline-block}}
+.meta{{font-family:'Space Mono',monospace;font-size:{fs_cover(20)}px;color:#60748a;letter-spacing:1px}}
+.hero{{margin-bottom:{fs_cover(28)}px;flex-shrink:0}}
+.hero h1{{font-size:{fs_cover(84)}px;font-weight:900;color:#124783;line-height:1.05;letter-spacing:-1px}}
+.hero .sub{{font-size:{fs_cover(24)}px;font-weight:600;color:#60748a;margin-top:{fs_cover(10)}px}}
+.grid{{display:grid;grid-template-columns:1fr 1fr;gap:{fs_cover(28)}px;flex:1 1 auto;margin-bottom:{fs_cover(24)}px;min-height:0}}
+.icard{{background:#fff;border:4px solid #1c4f8d;border-radius:{fs_cover(20)}px;
+  padding:{fs_cover(28)}px {fs_cover(36)}px;display:flex;align-items:center;gap:{fs_cover(24)}px;
+  box-shadow:{fs_cover(12)}px {fs_cover(12)}px 0 rgba(0,0,0,.07)}}
+.ic-emoji{{font-size:{fs_cover(44)}px;flex-shrink:0}}
+.ic-title{{font-size:{fs_cover(28)}px;font-weight:700;color:#124783;line-height:1.25;word-break:break-word}}
+.caption-pill{{align-self:center;padding:{fs_cover(18)}px {fs_cover(40)}px;
+  border:4px solid #17212d;border-radius:{fs_cover(24)}px;background:#fff;
+  font-size:{fs_cover(30)}px;font-weight:900;color:#17212d;
+  box-shadow:{fs_cover(8)}px {fs_cover(8)}px 0 rgba(0,0,0,.07);text-align:center;flex-shrink:0}}
 {ANIM_CSS}
 </style></head><body>
 <div class="stage">
-<div class="frame"></div>
 <div class="top-row anim anim-fade-in delay-1">
-  <div class="tag">{html.escape(tag_label)}</div>
-  <div class="meta">{date_disp_cn} · 精选 {n} 条 AI 新闻</div>
+  <div class="tag"><span class="dot"></span>AI NEWS WEEKLY</div>
+  <div class="meta">{date_disp_cn} · 精选 {n} 条</div>
 </div>
-<div class="eyebrow anim anim-fade-in delay-1">
-  <span>{html.escape(eyebrow_src)}</span>
-  <span class="dot">·</span>
-  <span>{html.escape(hot_source)}</span>
-  <span class="dot">·</span>
-  <span>AI 小白速览</span>
+<div class="hero anim anim-slide-l delay-2">
+  <h1>本周 AI 速览</h1>
+  <div class="sub">{date_disp} · 最值得关注的 AI 动态</div>
 </div>
-<div class="headline">
-  <div class="l1">
-    <span class="en anim anim-slide-l delay-2">{html.escape(hl['en_keyword'])}</span>
-    <span class="cn-serif anim anim-fade-in delay-2">{html.escape(hl['cn_keyword'])}</span>
-  </div>
-  <div class="l2 anim anim-slide-up delay-3">{html.escape(hl['cn_punchline'])}</div>
+<div class="grid">
+  {item_cards}
 </div>
-<div class="subline anim anim-fade-in delay-4">
-  <span class="en">{date_disp}</span>
-  <span class="sep">·</span>
-  <span><b>今日</b>最热 AI 新闻 — {html.escape(hot_summary)}</span>
-</div>
-<div class="bottom-row anim anim-fade-in delay-5">
-  <div class="quote">{html.escape(quote_text)}</div>
-</div>
+<div class="caption-pill anim anim-slide-up delay-5">{caption_text}</div>
 </div>
 </body></html>"""
-
 
 def _split_headline(title: str) -> dict:
     """Extract en_keyword, cn_keyword, cn_punchline from a news title."""
@@ -623,24 +652,48 @@ def _aiff_to_aac(aiff_path: Path, aac_path: Path) -> Path:
 
 
 def _narration_to_aac(text: str, output_aac: Path) -> Path:
-    """Generate AAC narration via best available TTS provider."""
+    """Generate AAC narration via best available TTS provider with failover chain.
+
+    Chain: Azure TTS → Zhipu TTS → macOS say (local).
+    Each provider has its own circuit breaker to avoid hammering degraded services.
+    """
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from news_pipeline.circuit_breaker import get_breaker
+
     # 1. Try Azure TTS (neural, best quality)
-    try:
-        from xhs_publish.azure_tts import get_key_region, generate_narration_aac
-        key, _region = get_key_region()
-        if key:
-            return generate_narration_aac(text, output_aac)
-    except Exception:
-        pass
+    cb_azure = get_breaker("tts:azure", failure_threshold=3, cooldown_seconds=60)
+    if cb_azure.allow_call():
+        try:
+            from xhs_publish.azure_tts import get_key_region, generate_narration_aac
+            key, _region = get_key_region()
+            if key:
+                result = generate_narration_aac(text, output_aac)
+                cb_azure.on_success()
+                return result
+        except Exception as exc:
+            print(f"  [tts] Azure failed: {exc}")
+            cb_azure.on_failure()
+    else:
+        print("  [tts] Azure circuit OPEN, skipping to next provider")
+
     # 2. Try Zhipu TTS (Chinese, easy signup)
-    try:
-        from xhs_publish.zhipu_tts import get_key, generate_narration_aac
-        key = get_key()
-        if key:
-            return generate_narration_aac(text, output_aac)
-    except Exception:
-        pass
-    # 3. Fallback: macOS say → aiff → aac
+    cb_zhipu = get_breaker("tts:zhipu", failure_threshold=3, cooldown_seconds=60)
+    if cb_zhipu.allow_call():
+        try:
+            from xhs_publish.zhipu_tts import get_key, generate_narration_aac
+            key = get_key()
+            if key:
+                result = generate_narration_aac(text, output_aac)
+                cb_zhipu.on_success()
+                return result
+        except Exception as exc:
+            print(f"  [tts] Zhipu failed: {exc}")
+            cb_zhipu.on_failure()
+    else:
+        print("  [tts] Zhipu circuit OPEN, skipping to next provider")
+
+    # 3. Fallback: macOS say → aiff → aac (always available)
+    print("  [tts] falling back to macOS say")
     aiff_path = output_aac.with_suffix(".aiff")
     _generate_narration(text, aiff_path)
     _aiff_to_aac(aiff_path, output_aac)

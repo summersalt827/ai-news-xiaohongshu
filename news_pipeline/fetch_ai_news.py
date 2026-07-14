@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """从 163 邮箱拉取标题含 "AI news" 的邮件，翻译后推送到飞书并生成展示内容。
 
-流程:
-  1. 连接 163 IMAP，搜索标题含 "AI news" 的未读邮件
+流程 (周报模式):
+  1. 连接 163 IMAP，搜索近7天标题含 "AI news" 的邮件
   2. 提取正文，调用 Claude API 中英互译
-  3. 生成 Markdown 存档 + HTML 展示页 + 小红书图文
-  4. HTML 复制到 public/ 目录供 Vercel 部署
-  5. 推送摘要 + HTML 链接到飞书
+  3. 全网多源抓取 + Claude 精选 6-8 条 + GitHub Trending 3 条
+  4. 生成 Markdown 存档 + HTML 展示页 + 小红书卡片 + 视频
+  5. 推送到飞书
 
 环境变量:
   EMAIL_163_USER     - 163 邮箱地址
@@ -29,7 +29,7 @@ import ssl
 import sys
 import urllib.error
 import urllib.request
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from email.header import decode_header
 from email.utils import parsedate_to_datetime
 from html.parser import HTMLParser
@@ -359,7 +359,7 @@ def _fetch_emails_by_subject(conn: imaplib.IMAP4_SSL, folder: str,
 def _search_ai_news_emails(conn: imaplib.IMAP4_SSL) -> list[dict]:
     """在收件箱及订阅文件夹中搜索 AI News 相关邮件。
 
-    只返回当天的邮件（按 UTC 日期比较），最多 3 封。
+    返回近7天的邮件，最多 5 封。
     """
     processed_ids: set[str] = set()
     all_results: list[dict] = []
@@ -368,37 +368,38 @@ def _search_ai_news_emails(conn: imaplib.IMAP4_SSL) -> list[dict]:
     subject_keywords = ["[ainews]", "ainews", "ai news", "twitter recap"]
 
     # 1. 搜索收件箱
-    inbox_results = _fetch_emails_by_subject(conn, "INBOX", subject_keywords, processed_ids, limit=50)
+    inbox_results = _fetch_emails_by_subject(conn, "INBOX", subject_keywords, processed_ids, limit=100)
     all_results.extend(inbox_results)
     if inbox_results:
         print(f"  收件箱: {len(inbox_results)} 封匹配邮件")
 
     # 2. 搜索额外的文件夹
     for folder in EXTRA_FOLDERS:
-        results = _fetch_emails_by_subject(conn, folder, subject_keywords, processed_ids, limit=50)
+        results = _fetch_emails_by_subject(conn, folder, subject_keywords, processed_ids, limit=100)
         all_results.extend(results)
         if results:
             print(f"  {folder}: {len(results)} 封匹配邮件")
 
-    # 优先今天的邮件；今天没有则往前追溯最近日期的邮件
+    # 近7天的邮件
     today_utc = date.today()
+    week_ago = today_utc - timedelta(days=7)
     all_results.sort(key=lambda x: x["date"], reverse=True)
 
-    today_results = [r for r in all_results
-                     if (r["date"].date() if r["date"] else today_utc) == today_utc]
+    recent = [r for r in all_results
+              if r["date"] and week_ago <= r["date"].date() <= today_utc]
 
-    # 今天有邮件用今天的，没有则取最新日期的那批
-    if today_results:
-        candidates = today_results
+    if recent:
+        candidates = recent
     else:
+        # fallback: 如果近7天没有，取最新的一批
         candidates = all_results
         if candidates:
-            latest_date = candidates[0]["date"].date()
-            candidates = [r for r in candidates if r["date"].date() == latest_date]
+            latest_date = candidates[0]["date"].date() if candidates[0]["date"] else today_utc
+            candidates = [r for r in candidates if r["date"] and r["date"].date() == latest_date]
 
     twitter_recaps = [r for r in candidates if "twitter recap" in r["subject"].lower()]
     non_recaps = [r for r in candidates if "twitter recap" not in r["subject"].lower()]
-    return non_recaps[:3] + twitter_recaps
+    return non_recaps[:5] + twitter_recaps
 
 
 # ── 飞书推送 ─────────────────────────────────────────────────
@@ -570,26 +571,28 @@ def _generate_combined_caption(
     """Generate Xiaohongshu caption file for combined items."""
     date_display = date.fromisoformat(date_str).strftime("%Y年%m月%d日")
     email_subject = emails[0]["subject"] if emails else "AI News"
-    # Strip [AINews] prefix
     email_subject = email_subject.replace("[AINews]", "").strip().strip(":").strip()
+    n = len(items)
 
-    lines = [f"🤖 AI 小白速览 | {date_display}"]
+    lines = [f"🤖 AI 周报 | {date_display}"]
     lines.append("")
     for i, item in enumerate(items, 1):
         emoji = item.get("emoji", "📌")
         title = item.get("title", "")
         summary = item.get("summary", "")
         source = item.get("source_note", "")
-        lines.append(f"{i}️⃣ {emoji} {title}")
+        cat = item.get("category", "")
+        cat_tag = f"【{cat}】" if cat else ""
+        lines.append(f"{i}️⃣ {emoji} {cat_tag}{title}")
         lines.append(f"   {summary}")
         if source:
             lines.append(f"   📍 {source}")
         lines.append("")
 
     lines.append("—")
-    lines.append(f"📧 邮件来源: {email_subject}")
+    lines.append(f"📧 来源: {email_subject}")
     lines.append("")
-    lines.append("#AI新闻 #小白必看 #人工智能 #科技资讯 #每日AI")
+    lines.append("#AI新闻 #AI周报 #人工智能 #科技资讯 #每周AI #GitHub开源")
 
     caption_path = output_dir / f"{date_str}_caption.txt"
     caption_path.write_text("\n".join(lines), encoding="utf-8")
@@ -597,6 +600,55 @@ def _generate_combined_caption(
 
 
 # ── Main ─────────────────────────────────────────────────────
+
+def _interactive_confirm(ai_items: list[dict], github_items: list[dict]) -> bool:
+    """Interactive human-in-the-loop confirmation before publishing.
+
+    Options:
+      y / Enter  — approve all, proceed to card generation
+      s N        — skip item N (by index shown in prompt)
+      n / q      — abort, don't publish anything
+    """
+    total = len(ai_items) + len(github_items)
+    if total == 0:
+        print("  没有内容可确认")
+        return False
+
+    while True:
+        try:
+            choice = input(
+                f"  📋 确认发布? [y=全部确认 / sN=跳过第N条 / n=取消]: "
+            ).strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return False
+
+        if choice in ("", "y", "yes"):
+            print("  ✅ 确认全部\n")
+            return True
+        if choice in ("n", "q", "no", "quit"):
+            return False
+        if choice.startswith("s"):
+            try:
+                n = int(choice[1:])
+            except ValueError:
+                print("  ⚠️  格式: s1 / s2 / ... 指定要跳过的序号\n")
+                continue
+            if 1 <= n <= total:
+                # Remove item n from ai_items or github_items
+                ai_len = len(ai_items)
+                if n <= ai_len:
+                    removed = ai_items.pop(n - 1)
+                else:
+                    removed = github_items.pop(n - 1 - ai_len)
+                print(f"  🗑️  已跳过: {removed.get('title', '?')}\n")
+                # Re-display shortened list
+                from item_matcher import format_confirmation_prompt
+                print(format_confirmation_prompt(ai_items, github_items))
+                print()
+                continue
+        print("  ⚠️  无效输入，请输入 y / sN / n\n")
+
 
 def main() -> None:
     today = date.today().isoformat()
@@ -645,7 +697,7 @@ def main() -> None:
         print(f"  网页抓取失败 (不阻塞): {exc}")
 
     # ── Step 1.6: Claude 精选 4 条 AI 新闻 ────────────────
-    print("  精选 4 条 AI 新闻...")
+    print("  精选 6-8 条 AI 新闻 (周报)...")
     ai_items: list[dict] = []
     try:
         from item_matcher import curate_from_all_sources
@@ -666,10 +718,21 @@ def main() -> None:
     except Exception as exc:
         print(f"  GitHub Trending 失败 (不阻塞): {exc}")
 
-    # ── Step 1.8: 精选结果 (自动确认) ──────────────────────
+    # ── Step 1.7.5: 质量预判 — 评分 + 低分重写 ────────────
+    from item_matcher import score_and_rewrite
+    all_to_score = ai_items + github_items
+    all_to_score = score_and_rewrite(all_to_score)
+    ai_items = [it for it in all_to_score if not it.get("source_note", "").startswith("GitHub")]
+    github_items = [it for it in all_to_score if it.get("source_note", "").startswith("GitHub")]
+
+    # ── Step 1.8: 精选结果交互确认 ──────────────────────
     from item_matcher import format_confirmation_prompt
     print(format_confirmation_prompt(ai_items, github_items))
-    print("  ✅ 自动确认全部\n")
+    print()
+
+    if not _interactive_confirm(ai_items, github_items):
+        print("  ❌ 用户取消发布\n")
+        return
 
     # ── Step 1.9: 生成小红书卡片 + 封面 + PNG ────────────────
     card_html_paths: list[Path] = []
@@ -730,6 +793,24 @@ def main() -> None:
         except Exception as exc:
             print(f"  卡片生成失败 (不阻塞): {exc}")
 
+    # ── Step 1.9.5: 多平台文案生成 ─────────────────────────
+    platform_captions: dict[str, str] = {}
+    if combined_items:
+        print("  生成多平台文案...")
+        try:
+            from item_matcher import generate_multi_platform_captions
+            platform_captions = generate_multi_platform_captions(
+                combined_items, effective_date
+            )
+            # Save each platform caption
+            for platform, text in platform_captions.items():
+                if text:
+                    cap_path = xhs_output_dir / f"{effective_date}_caption_{platform}.txt"
+                    cap_path.write_text(text, encoding="utf-8")
+            print(f"  多平台文案: {[k for k, v in platform_captions.items() if v]}")
+        except Exception as exc:
+            print(f"  多平台文案失败 (不阻塞): {exc}")
+
     # ── Step 2: 生成 Markdown 存档 ────────────────────────
     print("  生成 Markdown 存档...")
     md_content = _build_markdown(emails, effective_date)
@@ -737,6 +818,14 @@ def main() -> None:
     md_path = DAILY_DIR / f"{effective_date}.md"
     md_path.write_text(md_content, encoding="utf-8")
     print(f"  已保存: {md_path}")
+
+    # ── Step 2.5: 反馈闭环 — 记录发布评分 ────────────────
+    if combined_items:
+        try:
+            from feedback_loop import log_publish
+            log_publish(effective_date, combined_items, platform_captions)
+        except Exception as exc:
+            print(f"  反馈记录失败 (不阻塞): {exc}")
 
     # ── Step 3: 生成 HTML 展示页 ──────────────────────────
     print("  生成 HTML 展示页...")
@@ -768,18 +857,18 @@ def main() -> None:
 
     img_path, caption_path = save_xiaohongshu(emails, all_blocks, xhs_output_dir, effective_date)
 
-    # ── Step 4.5: 自动发布到小红书 ────────────────────────
-    try:
-        publish_script = PROJECT_DIR / "xhs_publish" / "publish_xiaohongshu_auto.py"
-        if publish_script.exists():
-            import subprocess as _sp
-            print("  启动自动发布...")
-            _sp.Popen(
-                [sys.executable, str(publish_script), effective_date],
-                stdout=_sp.DEVNULL, stderr=_sp.DEVNULL,
-            )
-    except Exception as exc:
-        print(f"  启动发布失败 (不阻塞): {exc}")
+    # ── Step 4.5: 自动发布到小红书 (已禁用) ──────────────────
+    # try:
+    #     publish_script = PROJECT_DIR / "xhs_publish" / "publish_xiaohongshu_auto.py"
+    #     if publish_script.exists():
+    #         import subprocess as _sp
+    #         print("  启动自动发布...")
+    #         _sp.Popen(
+    #             [sys.executable, str(publish_script), effective_date],
+    #             stdout=_sp.DEVNULL, stderr=_sp.DEVNULL,
+    #         )
+    # except Exception as exc:
+    #     print(f"  启动发布失败 (不阻塞): {exc}")
 
     # ── Step 5: 推送到飞书 ────────────────────────────────
     print("  推送到飞书...")
@@ -826,6 +915,24 @@ def main() -> None:
     if video_path:
         log_lines.append(f"  视频: {video_path}")
     log_path.write_text("\n".join(log_lines) + "\n", encoding="utf-8")
+
+    # ── Step 6.5: 内容日历 + 竞品快报 ─────────────────────
+    try:
+        from content_calendar import mark_published, get_next_sunday
+        mark_published(effective_date)
+        next_sun = get_next_sunday()
+        print(f"\n  📅 下次周报: {next_sun} (周日)")
+    except Exception as exc:
+        print(f"  📅 日历更新跳过: {exc}")
+
+    try:
+        from competitive_tracker import quick_scan
+        comp_summary = quick_scan()
+        if comp_summary.get("total_competitors", 0) > 0:
+            print(f"  🔍 竞品追踪: {comp_summary['total_competitors']}个账号 "
+                  f"({len(comp_summary.get('platforms', {}))}个平台)")
+    except Exception:
+        pass
 
     print(f"\n  {'='*50}")
     print(f"  处理完成!")

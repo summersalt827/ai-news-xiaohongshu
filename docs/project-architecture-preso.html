@@ -1,0 +1,930 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI News & Skills — 全自动社媒工厂架构</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Noto+Sans+SC:wght@300;400;500;700;900&display=swap');
+
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #0d0f13;
+    --surface: #15181e;
+    --surface2: #1c1f26;
+    --border: #2a2d35;
+    --primary: #4d8ef7;
+    --accent: #22c78b;
+    --warm: #d98b67;
+    --text: #e6e8ec;
+    --text2: #8b8f9a;
+    --text3: #5c606a;
+    --danger: #e0556a;
+    --warn: #e0a655;
+    --slide-w: 960px;
+    --slide-h: 540px;
+    font-family: 'Inter', 'Noto Sans SC', 'PingFang SC', sans-serif;
+    font-size: 16px;
+    color: var(--text);
+    background: var(--bg);
+  }
+
+  body {
+    display: flex; flex-direction: column; align-items: center;
+    min-height: 100vh; padding: 32px 24px 120px;
+    background: radial-gradient(ellipse at 50% 0%, #1a1d2a 0%, var(--bg) 70%);
+  }
+
+  /* ── Progress bar ── */
+  .progress-bar {
+    position: fixed; top: 0; left: 0; height: 3px;
+    background: linear-gradient(90deg, var(--primary), var(--accent));
+    z-index: 1000; transition: width .4s ease;
+  }
+
+  /* ── Nav ── */
+  .nav {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    display: flex; gap: 8px; z-index: 100;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 40px; padding: 6px 10px;
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  }
+  .nav button {
+    width: 36px; height: 36px; border-radius: 50%;
+    border: 1px solid var(--border); background: transparent;
+    color: var(--text2); cursor: pointer; font-size: 16px;
+    display: flex; align-items: center; justify-content: center;
+    transition: all .2s;
+  }
+  .nav button:hover { background: var(--surface2); color: var(--text); }
+  .nav button.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+  .nav .divider { width: 1px; background: var(--border); margin: 4px 4px; }
+
+  /* ── Slide ── */
+  .slide {
+    width: var(--slide-w); min-height: var(--slide-h);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 48px 56px;
+    margin-bottom: 24px;
+    display: none;
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 8px 40px rgba(0,0,0,.35);
+  }
+  .slide.active { display: block; }
+
+  /* decorative corner */
+  .slide::after {
+    content: ''; position: absolute;
+    top: -60px; right: -60px;
+    width: 140px; height: 140px;
+    border-radius: 50%;
+    opacity: .06;
+    pointer-events: none;
+  }
+
+  /* ── Slide header ── */
+  .slide-label {
+    font-size: 10px; font-weight: 700; letter-spacing: 2px;
+    text-transform: uppercase; margin-bottom: 12px;
+    display: inline-flex; align-items: center; gap: 8px;
+  }
+  .slide-label .dot {
+    width: 7px; height: 7px; border-radius: 50%; display: inline-block;
+  }
+  .slide-title {
+    font-size: 36px; font-weight: 900; line-height: 1.2; letter-spacing: -0.5px;
+    margin-bottom: 28px;
+  }
+  .slide-title .hl { color: var(--primary); }
+  .slide-title .hl2 { color: var(--accent); }
+
+  /* ── Chapters color accents ── */
+  .ch-intro .slide-label .dot, .ch-intro::after { background: var(--primary); }
+  .ch-intro .slide-label { color: var(--primary); }
+
+  .ch-layout .slide-label .dot, .ch-layout::after { background: var(--accent); }
+  .ch-layout .slide-label { color: var(--accent); }
+
+  .ch-pipeline .slide-label .dot, .ch-pipeline::after { background: #7c6ff7; }
+  .ch-pipeline .slide-label { color: #7c6ff7; }
+
+  .ch-brands .slide-label .dot, .ch-brands::after { background: var(--warm); }
+  .ch-brands .slide-label { color: var(--warm); }
+
+  .ch-skills .slide-label .dot, .ch-skills::after { background: #c06ff7; }
+  .ch-skills .slide-label { color: #c06ff7; }
+
+  .ch-demo .slide-label .dot, .ch-demo::after { background: #4da6d9; }
+  .ch-demo .slide-label { color: #4da6d9; }
+
+  .ch-compete .slide-label .dot, .ch-compete::after { background: #e87c50; }
+  .ch-compete .slide-label { color: #e87c50; }
+
+  .ch-principles .slide-label .dot, .ch-principles::after { background: var(--warn); }
+  .ch-principles .slide-label { color: var(--warn); }
+
+  .ch-outro .slide-label .dot, .ch-outro::after { background: var(--text2); }
+  .ch-outro .slide-label { color: var(--text2); }
+
+  /* ── Components ── */
+
+  /* Architecture diagram */
+  .arch-diagram {
+    display: flex; flex-direction: column; gap: 10px; margin-top: 8px;
+  }
+  .arch-row {
+    display: flex; gap: 10px; align-items: stretch;
+  }
+  .arch-box {
+    flex: 1; padding: 14px 16px; border-radius: 10px;
+    border: 1px solid var(--border); background: var(--surface2);
+    text-align: center; font-size: 13px;
+  }
+  .arch-box strong { display: block; font-size: 15px; margin-bottom: 4px; }
+  .arch-box small { color: var(--text3); font-size: 11px; }
+  .arch-box.accent { border-color: var(--primary); background: rgba(77,142,247,.06); }
+  .arch-box.accent strong { color: var(--primary); }
+  .arch-box.green { border-color: var(--accent); background: rgba(34,199,139,.06); }
+  .arch-box.green strong { color: var(--accent); }
+  .arch-box.warm { border-color: var(--warm); background: rgba(217,139,103,.06); }
+  .arch-box.warm strong { color: var(--warm); }
+  .arch-box.purple { border-color: #c06ff7; background: rgba(192,111,247,.06); }
+  .arch-box.purple strong { color: #c06ff7; }
+
+  .arch-arrow-row {
+    display: flex; justify-content: center; gap: 40px;
+    color: var(--text3); font-size: 18px; padding: 2px 0;
+  }
+
+  /* Pipeline flow */
+  .pipeline {
+    display: flex; align-items: center; gap: 12px; justify-content: center;
+    margin: 24px 0;
+  }
+  .pipe-step {
+    width: 110px; padding: 20px 12px; border-radius: 12px;
+    text-align: center; border: 1px solid var(--border);
+    background: var(--surface2);
+  }
+  .pipe-step .step-num {
+    font-size: 28px; font-weight: 900; color: var(--primary);
+  }
+  .pipe-step .step-name {
+    font-size: 13px; font-weight: 700; margin-top: 4px;
+  }
+  .pipe-step .step-detail {
+    font-size: 10px; color: var(--text3); margin-top: 4px; line-height: 1.4;
+  }
+  .pipe-arrow {
+    color: var(--text3); font-size: 20px; flex-shrink: 0;
+  }
+
+  /* Layer breakdown */
+  .layer-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 16px;
+  }
+  .layer-card {
+    padding: 18px; border-radius: 10px; border: 1px solid var(--border);
+    background: var(--surface2);
+  }
+  .layer-card .layer-num {
+    font-size: 10px; font-weight: 700; letter-spacing: 1px;
+    margin-bottom: 4px;
+  }
+  .layer-card .layer-title {
+    font-size: 17px; font-weight: 700; margin-bottom: 6px;
+  }
+  .layer-card .layer-tech {
+    font-size: 11px; color: var(--text3); line-height: 1.5;
+  }
+  .layer-card.l1 .layer-num { color: var(--primary); }
+  .layer-card.l2 .layer-num { color: #7c6ff7; }
+  .layer-card.l3 .layer-num { color: var(--warm); }
+  .layer-card.l4 .layer-num { color: var(--accent); }
+
+  /* Brand comparison */
+  .brand-compare {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 12px;
+  }
+  .brand-card {
+    padding: 28px; border-radius: 14px; text-align: center;
+  }
+  .brand-card.weekly {
+    background: linear-gradient(135deg, rgba(18,71,131,.15), rgba(28,167,122,.08));
+    border: 2px solid rgba(28,79,141,.25);
+  }
+  .brand-card.skills {
+    background: linear-gradient(135deg, rgba(217,139,103,.12), rgba(250,249,245,.04));
+    border: 2px solid rgba(217,139,103,.2);
+  }
+  .brand-card .brand-tag {
+    font-size: 10px; font-weight: 700; letter-spacing: 2px;
+    padding: 3px 12px; border-radius: 20px; display: inline-block; margin-bottom: 14px;
+  }
+  .brand-card.weekly .brand-tag { background: #124783; color: #fff; }
+  .brand-card.skills .brand-tag { background: var(--warm); color: #fff; }
+  .brand-card .brand-name {
+    font-size: 22px; font-weight: 800; margin-bottom: 8px;
+  }
+  .brand-card .brand-specs {
+    font-size: 12px; color: var(--text2); line-height: 1.7;
+  }
+
+  /* Skills cards */
+  .skills-row {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 12px;
+  }
+  .skill-card {
+    padding: 22px 18px; border-radius: 12px;
+    border: 1px solid var(--border); background: var(--surface2);
+    text-align: center;
+  }
+  .skill-card .skill-icon {
+    font-size: 32px; margin-bottom: 10px;
+  }
+  .skill-card .skill-name {
+    font-size: 14px; font-weight: 700; margin-bottom: 6px;
+  }
+  .skill-card .skill-desc {
+    font-size: 11px; color: var(--text3); line-height: 1.5;
+  }
+
+  /* Principles */
+  .principles-list {
+    display: flex; flex-direction: column; gap: 16px; margin-top: 8px;
+  }
+  .principle {
+    display: flex; gap: 16px; align-items: flex-start;
+    padding: 18px 20px; border-radius: 10px;
+    border: 1px solid var(--border); background: var(--surface2);
+  }
+  .principle .p-num {
+    width: 44px; height: 44px; border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px; font-weight: 900; flex-shrink: 0;
+  }
+  .principle .p-num.n1 { background: rgba(77,142,247,.12); color: var(--primary); }
+  .principle .p-num.n2 { background: rgba(34,199,139,.12); color: var(--accent); }
+  .principle .p-num.n3 { background: rgba(192,111,247,.12); color: #c06ff7; }
+  .principle .p-title { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
+  .principle .p-desc { font-size: 12px; color: var(--text2); line-height: 1.6; }
+
+  /* Big text / quote */
+  .big-quote {
+    font-size: 28px; font-weight: 700; line-height: 1.4;
+    color: var(--text); text-align: center; margin: 20px 0;
+  }
+  .big-quote .em { color: var(--primary); }
+  .big-quote .em2 { color: var(--accent); }
+
+  /* Tag pills row */
+  .tag-row {
+    display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 16px;
+  }
+  .tag {
+    padding: 5px 14px; border-radius: 20px;
+    font-size: 11px; font-weight: 600;
+    border: 1px solid var(--border); color: var(--text2);
+  }
+  .tag.blue { border-color: rgba(77,142,247,.3); color: var(--primary); }
+  .tag.green { border-color: rgba(34,199,139,.3); color: var(--accent); }
+
+  /* System block */
+  .sys-block {
+    display: flex; align-items: center; justify-content: center; gap: 20px;
+    margin: 24px 0;
+  }
+  .sys-main {
+    padding: 24px 36px; border-radius: 14px; text-align: center;
+    border: 2px solid var(--primary); background: rgba(77,142,247,.06);
+  }
+  .sys-main .sys-name { font-size: 20px; font-weight: 800; color: var(--primary); }
+  .sys-main .sys-sub { font-size: 12px; color: var(--text3); margin-top: 4px; }
+  .sys-side {
+    padding: 14px 22px; border-radius: 10px; text-align: center;
+    border: 1px solid var(--border); background: var(--surface2);
+    font-size: 13px;
+  }
+  .sys-side strong { color: var(--text); }
+  .sys-side small { color: var(--text3); font-size: 10px; display: block; margin-top: 2px; }
+
+  /* Counter / stat */
+  .stat-row {
+    display: flex; gap: 20px; justify-content: center; margin: 20px 0;
+  }
+  .stat {
+    text-align: center; padding: 16px 28px;
+    border-radius: 10px; background: var(--surface2); border: 1px solid var(--border);
+  }
+  .stat .num { font-size: 36px; font-weight: 900; color: var(--primary); }
+  .stat .label { font-size: 12px; color: var(--text3); margin-top: 4px; }
+
+  /* Source list */
+  .source-list {
+    display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; margin-top: 10px;
+  }
+  .source {
+    padding: 8px 16px; border-radius: 8px; font-size: 12px; font-weight: 600;
+    background: var(--surface2); border: 1px solid var(--border);
+  }
+
+  /* ── Responsive scaling for projection ── */
+  @media (min-width: 1400px) {
+    .slide { width: 1100px; min-height: 620px; padding: 56px 64px; }
+    .slide-title { font-size: 42px; }
+  }
+  @media (max-width: 1024px) {
+    .slide { width: 100%; min-height: auto; padding: 32px 28px; }
+    .slide-title { font-size: 26px; }
+    .brand-compare, .skills-row, .layer-grid { grid-template-columns: 1fr; }
+    .arch-row { flex-wrap: wrap; }
+  }
+</style>
+</head>
+<body>
+
+<div class="progress-bar" id="progress"></div>
+
+<!-- ━━━━━━━━━━━━━━━━━━ Slide 0 · 开场 ━━━━━━━━━━━━━━━━━━ -->
+<div class="slide active ch-intro" data-slide="0">
+  <div class="slide-label"><span class="dot"></span> AI 内容工厂架构</div>
+  <div class="slide-title">
+    一个人，一条管道，<br>全自动<span class="hl">社媒内容工厂</span>
+  </div>
+
+  <div class="arch-diagram">
+    <div class="arch-row">
+      <div class="arch-box accent">
+        <strong>AI News 自动化</strong>
+        <small>采集 → 精选 → 渲染 → 分发</small>
+      </div>
+      <div class="arch-box green">
+        <strong>视频发布引擎</strong>
+        <small>小红书 · B站 · FFmpeg + TTS</small>
+      </div>
+      <div class="arch-box warm">
+        <strong>AI Tour 教学网站</strong>
+        <small>拖拽式工作流画布</small>
+      </div>
+    </div>
+    <div class="arch-arrow-row">↑ 核心引擎 &nbsp;&nbsp; ↑ 分发层 &nbsp;&nbsp; ↑ 教育产品</div>
+  </div>
+
+  <div class="stat-row" style="margin-top:24px">
+    <div class="stat"><div class="num">4</div><div class="label">管道层级</div></div>
+    <div class="stat"><div class="num">5</div><div class="label">信息源</div></div>
+    <div class="stat"><div class="num">2</div><div class="label">品牌格式</div></div>
+    <div class="stat"><div class="num">3</div><div class="label">Claude Skills</div></div>
+  </div>
+
+  <div class="tag-row" style="margin-top:18px">
+    <span class="tag blue">163 邮箱</span>
+    <span class="tag blue">Bing</span>
+    <span class="tag blue">GitHub API</span>
+    <span class="tag green">FFmpeg</span>
+    <span class="tag green">Azure TTS</span>
+    <span class="tag green">Playwright</span>
+    <span class="tag">Vercel</span>
+    <span class="tag">飞书</span>
+  </div>
+</div>
+
+<!-- ━━━━━━━━━━━━━━━━━━ Slide 1 · 顶层布局 ━━━━━━━━━━━━━━━━━━ -->
+<div class="slide ch-layout" data-slide="1">
+  <div class="slide-label"><span class="dot"></span> 第 1 章</div>
+  <div class="slide-title">
+    三个子系统<br><span class="hl2">生产与分发解耦</span>
+  </div>
+
+  <div class="sys-block">
+    <div class="sys-side">
+      <strong>video-publish/</strong>
+      <small>小红书 · B站 发布适配</small>
+    </div>
+    <div style="color:var(--text3);font-size:20px">←</div>
+    <div class="sys-main">
+      <div class="sys-name">ai-news-xiaohongshu/</div>
+      <div class="sys-sub">🏭 核心内容工厂 · 产出卡片 / 视频 / 文案</div>
+    </div>
+    <div style="color:var(--text3);font-size:20px">→</div>
+    <div class="sys-side">
+      <strong>website/</strong>
+      <small>AI Tour 教学工具</small>
+    </div>
+  </div>
+
+  <div style="display:flex;gap:20px;margin-top:16px">
+    <div style="flex:1;padding:14px 18px;border-radius:10px;background:var(--surface2);border:1px solid var(--border);font-size:12px;color:var(--text2);line-height:1.6">
+      <strong style="color:var(--text);font-size:14px">📦 产出内容资产</strong><br>
+      卡片 PNG · 封面图 · 视频 MP4<br>文案 txt · HTML 日报 · Markdown
+    </div>
+    <div style="flex:1;padding:14px 18px;border-radius:10px;background:var(--surface2);border:1px solid var(--border);font-size:12px;color:var(--text2);line-height:1.6">
+      <strong style="color:var(--text);font-size:14px">🚀 发布层只关心平台适配</strong><br>
+      尺寸裁剪 · 格式转码 · 上传 API<br>不影响内容生产逻辑
+    </div>
+    <div style="flex:1;padding:14px 18px;border-radius:10px;background:var(--surface2);border:1px solid var(--border);font-size:12px;color:var(--text2);line-height:1.6">
+      <strong style="color:var(--text);font-size:14px">🔌 目录即接口</strong><br>
+      xiaohongshu/日期/<br>发布层读目录，不管怎么来的
+    </div>
+  </div>
+</div>
+
+<!-- ━━━━━━━━━━━━━━━━━━ Slide 2 · 4层管道 ━━━━━━━━━━━━━━━━━━ -->
+<div class="slide ch-pipeline" data-slide="2">
+  <div class="slide-label"><span class="dot"></span> 第 2 章</div>
+  <div class="slide-title">
+    核心引擎<br><span style="color:#7c6ff7">4 层管道</span>，全链路
+  </div>
+
+  <div class="pipeline">
+    <div class="pipe-step">
+      <div class="step-num">1</div>
+      <div class="step-name">采集</div>
+      <div class="step-detail">163 IMAP<br>Claude 翻译<br>全网抓取</div>
+    </div>
+    <div class="pipe-arrow">→</div>
+    <div class="pipe-step">
+      <div class="step-num">2</div>
+      <div class="step-name">精选</div>
+      <div class="step-detail">去重 · 打分<br>6-8条精选<br>多平台文案</div>
+    </div>
+    <div class="pipe-arrow">→</div>
+    <div class="pipe-step">
+      <div class="step-num">3</div>
+      <div class="step-name">渲染</div>
+      <div class="step-detail">HTML卡片→PNG<br>FFmpeg视频<br>TTS语音合成</div>
+    </div>
+    <div class="pipe-arrow">→</div>
+    <div class="pipe-step">
+      <div class="step-num">4</div>
+      <div class="step-name">分发</div>
+      <div class="step-detail">飞书推送<br>Vercel部署<br>自动发布</div>
+    </div>
+  </div>
+
+  <div class="layer-grid">
+    <div class="layer-card l1">
+      <div class="layer-num">LAYER 1</div>
+      <div class="layer-title">5 源采集 → Claude 翻译</div>
+      <div class="layer-tech">Bing · HN Algolia · Reddit · X/Nitter · ArXiv Atom<br>GitHub Search API 24h star 增速<br>邮件是锚点，但不止于邮件</div>
+    </div>
+    <div class="layer-card l2">
+      <div class="layer-num">LAYER 2</div>
+      <div class="layer-title">Claude 精选 + 人机回环</div>
+      <div class="layer-tech">去重 → 打分 → 6-8条精选 → 质量预判<br>低分重写 → 终端交互确认 (y/n)<br>自动化不是取代判断，是省掉90%体力活</div>
+    </div>
+    <div class="layer-card l3">
+      <div class="layer-num">LAYER 3</div>
+      <div class="layer-title">视觉渲染 · 设计token外部化</div>
+      <div class="layer-tech">Playwright @2x 截图 2160×2880<br>FFmpeg 合成 + Azure/智谱 TTS<br>颜色/字号全在 brands/*.json，不碰代码</div>
+    </div>
+    <div class="layer-card l4">
+      <div class="layer-num">LAYER 4</div>
+      <div class="layer-title">一键多平台分发</div>
+      <div class="layer-tech">飞书 Webhook · Vercel 静态部署<br>Playwright 模拟浏览器自动上传<br>全流程只点一次 y</div>
+    </div>
+  </div>
+</div>
+
+<!-- ━━━━━━━━━━━━━━━━━━ Slide 3 · 两个品牌 ━━━━━━━━━━━━━━━━━━ -->
+<div class="slide ch-brands" data-slide="3">
+  <div class="slide-label"><span class="dot"></span> 第 3 章</div>
+  <div class="slide-title">
+    一套系统<br><span style="color:var(--warm)">两种品牌输出</span>
+  </div>
+
+  <div class="brand-compare">
+    <div class="brand-card weekly">
+      <div class="brand-tag">AI NEWS WEEKLY</div>
+      <div class="brand-name">AI News 周报</div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:10px">默认模式 · 每周日自动触发</div>
+      <div class="brand-specs">
+        <strong>6-8</strong> 条精选新闻 + <strong>3</strong> 个 GitHub<br>
+        蓝绿配色 · 3层 info-card<br>
+        Insight Box 金句收尾<br>
+        「专业轻松，小白友好」
+      </div>
+    </div>
+    <div class="brand-card skills">
+      <div class="brand-tag">AI SKILLS</div>
+      <div class="brand-name">AI Skills 深度</div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:10px">手动触发 · 长图文白皮书</div>
+      <div class="brand-specs">
+        <strong>4-5</strong> 张长图文<br>
+        暖色调 · steps + insight-box<br>
+        单主题深度教程<br>
+        「教学引导，不卖焦虑」
+      </div>
+    </div>
+  </div>
+
+  <div style="display:flex;gap:12px;justify-content:center;margin-top:18px">
+    <div style="padding:8px 18px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);font-size:12px">
+      📐 <strong>统一 1080×1440 @2x</strong>
+    </div>
+    <div style="padding:8px 18px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);font-size:12px">
+      🎨 <strong>视觉 token JSON 可插拔</strong>
+    </div>
+    <div style="padding:8px 18px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);font-size:12px">
+      🏷️ <strong>文案/标签/语调全隔离</strong>
+    </div>
+  </div>
+</div>
+
+<!-- ━━━━━━━━━━━━━━━━━━ Slide 4 · 成果展示 ━━━━━━━━━━━━━━━━━━ -->
+<div class="slide ch-demo" data-slide="4">
+  <div class="slide-label"><span class="dot"></span> 案例展示</div>
+  <div class="slide-title">
+    实际产出<br><span style="color:#4da6d9">小红书 + B站 双平台</span>
+  </div>
+
+  <div style="display:flex;gap:24px;align-items:flex-start">
+    <!-- 小红书 -->
+    <div style="flex:1;text-align:center">
+      <div style="font-size:11px;font-weight:700;color:#e0556a;margin-bottom:8px;letter-spacing:1px">📕 小红书 · 3:4 竖屏</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+        <div style="border-radius:8px;overflow:hidden;border:1px solid var(--border);background:var(--surface2)">
+          <img src="../xiaohongshu/2026-07-11/2026-07-11_cover.png"
+               style="width:100%;height:auto;display:block" loading="lazy">
+          <div style="font-size:9px;color:var(--text3);padding:4px 6px">封面</div>
+        </div>
+        <div style="border-radius:8px;overflow:hidden;border:1px solid var(--border);background:var(--surface2)">
+          <img src="../xiaohongshu/2026-07-11/2026-07-11_card_01.png"
+               style="width:100%;height:auto;display:block" loading="lazy">
+          <div style="font-size:9px;color:var(--text3);padding:4px 6px">Card 1</div>
+        </div>
+        <div style="border-radius:8px;overflow:hidden;border:1px solid var(--border);background:var(--surface2)">
+          <img src="../xiaohongshu/2026-07-11/2026-07-11_card_02.png"
+               style="width:100%;height:auto;display:block" loading="lazy">
+          <div style="font-size:9px;color:var(--text3);padding:4px 6px">Card 2</div>
+        </div>
+        <div style="border-radius:8px;overflow:hidden;border:1px solid var(--border);background:var(--surface2)">
+          <img src="../xiaohongshu/2026-07-11/2026-07-11_card_03.png"
+               style="width:100%;height:auto;display:block" loading="lazy">
+          <div style="font-size:9px;color:var(--text3);padding:4px 6px">Card 3</div>
+        </div>
+      </div>
+      <div style="margin-top:8px;font-size:10px;color:var(--text3)">
+        9:16 视频 · Azure TTS 语音 · BGM 混音
+      </div>
+    </div>
+
+    <!-- B站 -->
+    <div style="flex:1;text-align:center">
+      <div style="font-size:11px;font-weight:700;color:#4da6d9;margin-bottom:8px;letter-spacing:1px">📺 B站 · 16:9 横屏</div>
+      <div style="border-radius:8px;overflow:hidden;border:1px solid var(--border);background:var(--surface2);margin-bottom:6px">
+        <img src="../xiaohongshu/2026-07-11/2026-07-11_cover_bilibili.png"
+             style="width:100%;height:auto;display:block" loading="lazy">
+        <div style="font-size:9px;color:var(--text3);padding:4px 6px">16:9 横屏封面</div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+        <div style="border-radius:8px;overflow:hidden;border:1px solid var(--border);background:var(--surface2)">
+          <img src="../xiaohongshu/2026-07-11/2026-07-11_card_04.png"
+               style="width:100%;height:auto;display:block" loading="lazy">
+          <div style="font-size:9px;color:var(--text3);padding:4px 6px">Card 4</div>
+        </div>
+        <div style="border-radius:8px;overflow:hidden;border:1px solid var(--border);background:var(--surface2)">
+          <img src="../xiaohongshu/2026-07-11/2026-07-11_card_05.png"
+               style="width:100%;height:auto;display:block" loading="lazy">
+          <div style="font-size:9px;color:var(--text3);padding:4px 6px">Card 5</div>
+        </div>
+      </div>
+      <div style="margin-top:8px;font-size:10px;color:var(--text3)">
+        16:9 视频 · 智谱 TTS · FFmpeg 合成
+      </div>
+    </div>
+  </div>
+
+  <div style="display:flex;gap:16px;justify-content:center;margin-top:14px">
+    <div style="padding:5px 14px;border-radius:20px;background:rgba(77,166,217,.1);border:1px solid rgba(77,166,217,.2);font-size:10px;color:var(--text2)">
+      🎨 品牌 JSON → 设计 token → Card HTML → Playwright @2x PNG
+    </div>
+    <div style="padding:5px 14px;border-radius:20px;background:rgba(77,166,217,.1);border:1px solid rgba(77,166,217,.2);font-size:10px;color:var(--text2)">
+      🎬 Card PNGs → FFmpeg + TTS + BGM → mp4 双格式
+    </div>
+  </div>
+</div>
+
+<!-- ━━━━━━━━━━━━━━━━━━ Slide 5 · Claude Code Skills ━━━━━━━━━━━━━━━━━━ -->
+<div class="slide ch-skills" data-slide="5">
+  <div class="slide-label"><span class="dot"></span> 第 4 章</div>
+  <div class="slide-title">
+    把经验变成<br><span style="color:#c06ff7">一行命令</span>
+  </div>
+
+  <div class="skills-row">
+    <div class="skill-card">
+      <div class="skill-icon">🏭</div>
+      <div class="skill-name">xhs-content-engine</div>
+      <div class="skill-desc">「生成内容工厂卡片」<br>触发 6 张：cover + p1~p5<br>紫色主题 · 自动填充</div>
+      <div style="margin-top:8px;font-size:10px;color:var(--text3)">触发词: 生成AI内容工厂卡片</div>
+    </div>
+    <div class="skill-card">
+      <div class="skill-icon">🎨</div>
+      <div class="skill-name">style-reference</div>
+      <div class="skill-desc">截图 → 说「参考这个样式」<br>自动提取设计 token<br>主色 · 字体 · 间距 · 阴影</div>
+      <div style="margin-top:8px;font-size:10px;color:var(--text3)">设计知识存在文件系统里</div>
+    </div>
+    <div class="skill-card">
+      <div class="skill-icon">🔍</div>
+      <div class="skill-name">competitive-reference</div>
+      <div class="skill-desc">追踪 5 个同类开源项目<br>更新节奏 · 内容策略<br>优先级 Roadmap 自动排</div>
+      <div style="margin-top:8px;font-size:10px;color:var(--text3)">竞品动态自动监控</div>
+    </div>
+  </div>
+
+  <div class="big-quote" style="margin-top:28px;font-size:22px">
+    你不在这里，别人也能跑出一样的卡片<br>
+    <span style="color:#c06ff7;font-size:18px">知识不依赖人，依赖系统</span>
+  </div>
+</div>
+
+<!-- ━━━━━━━━━━━━━━━━━━ Slide 6 · Skills 深度拆解 ━━━━━━━━━━━━━━━━━━ -->
+<div class="slide ch-skills" data-slide="6">
+  <div class="slide-label"><span class="dot"></span> 第 5 章 · 深度拆解</div>
+  <div class="slide-title">
+    Skills <span style="color:#c06ff7">内部架构</span>
+  </div>
+
+  <div style="display:flex;gap:18px">
+    <!-- 左: xhs-content-engine -->
+    <div style="flex:1.2">
+      <div style="font-size:11px;font-weight:700;color:#c06ff7;margin-bottom:10px;letter-spacing:1px">🏭 xhs-content-engine</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px">
+        <div style="padding:10px 8px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);text-align:center">
+          <div style="font-size:9px;color:var(--text3)">cover</div>
+          <div style="font-size:11px;font-weight:700">双引擎预览</div>
+          <div style="font-size:9px;color:var(--text3)">管道标签</div>
+        </div>
+        <div style="padding:10px 8px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);text-align:center">
+          <div style="font-size:9px;color:var(--text3)">p1</div>
+          <div style="font-size:11px;font-weight:700">Before/After</div>
+          <div style="font-size:9px;color:var(--text3)">建立共鸣</div>
+        </div>
+        <div style="padding:10px 8px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);text-align:center">
+          <div style="font-size:9px;color:var(--text3)">p2</div>
+          <div style="font-size:11px;font-weight:700">引擎一拆解</div>
+          <div style="font-size:9px;color:var(--text3)">展示能力</div>
+        </div>
+        <div style="padding:10px 8px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);text-align:center">
+          <div style="font-size:9px;color:var(--text3)">p3</div>
+          <div style="font-size:11px;font-weight:700">引擎二拆解</div>
+          <div style="font-size:9px;color:var(--text3)">展示能力</div>
+        </div>
+        <div style="padding:10px 8px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);text-align:center">
+          <div style="font-size:9px;color:var(--text3)">p4</div>
+          <div style="font-size:11px;font-weight:700">对比表</div>
+          <div style="font-size:9px;color:var(--text3)">证明架构</div>
+        </div>
+        <div style="padding:10px 8px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);text-align:center">
+          <div style="font-size:9px;color:var(--text3)">p5</div>
+          <div style="font-size:11px;font-weight:700">安装指南</div>
+          <div style="font-size:9px;color:var(--text3)">降低门槛</div>
+        </div>
+      </div>
+      <div style="margin-top:10px;font-size:10px;color:var(--text3);line-height:1.5;padding:8px;border-radius:6px;background:var(--surface2);border:1px dashed var(--border)">
+        <strong style="color:var(--text)">触发:</strong> 一句话 → 自动填充全部6张 → Playwright @2x PNG
+      </div>
+    </div>
+
+    <!-- 右: style-reference -->
+    <div style="flex:1">
+      <div style="font-size:11px;font-weight:700;color:#c06ff7;margin-bottom:10px;letter-spacing:1px">🎨 style-reference</div>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <div style="padding:10px 12px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);font-size:11px">
+          <strong>Step 1</strong> <span style="color:var(--text3)">提取设计 Token</span>
+          <div style="font-size:9px;color:var(--text3);margin-top:2px">bg · card · ink · accent · 字号阶梯 · 间距 · 圆角</div>
+        </div>
+        <div style="padding:10px 12px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);font-size:11px">
+          <strong>Step 2</strong> <span style="color:var(--text3)">识别 UI 组件</span>
+          <div style="font-size:9px;color:var(--text3);margin-top:2px">eyebrow-row · title-block · compare-box · insight-box…</div>
+        </div>
+        <div style="padding:10px 12px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);font-size:11px">
+          <strong>Step 3</strong> <span style="color:var(--text3)">生成 HTML 参考页</span>
+          <div style="font-size:9px;color:var(--text3);margin-top:2px">390px 宽度 → Chrome headless 截图对比</div>
+        </div>
+        <div style="padding:10px 12px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);font-size:11px">
+          <strong>Step 4</strong> <span style="color:var(--text3)">套用到 1080×1440</span>
+          <div style="font-size:9px;color:var(--text3);margin-top:2px">Canvas 切换 → 字号 ×2.5 → 套数据 → @2x PNG</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 组件库 -->
+  <div style="margin-top:16px">
+    <div style="font-size:11px;font-weight:700;color:#c06ff7;margin-bottom:8px;letter-spacing:1px">🧩 组件库 (11 个按需拼装)</div>
+    <div style="display:flex;flex-wrap:wrap;gap:5px">
+      <span style="padding:4px 10px;border-radius:6px;background:var(--surface2);border:1px solid var(--border);font-size:10px">title-block</span>
+      <span style="padding:4px 10px;border-radius:6px;background:var(--surface2);border:1px solid var(--border);font-size:10px">cn-block</span>
+      <span style="padding:4px 10px;border-radius:6px;background:var(--surface2);border:1px solid var(--border);font-size:10px">compare-row</span>
+      <span style="padding:4px 10px;border-radius:6px;background:var(--surface2);border:1px solid var(--border);font-size:10px">steps-list</span>
+      <span style="padding:4px 10px;border-radius:6px;background:var(--surface2);border:1px solid var(--border);font-size:10px">layers</span>
+      <span style="padding:4px 10px;border-radius:6px;background:var(--surface2);border:1px solid var(--border);font-size:10px">pipes</span>
+      <span style="padding:4px 10px;border-radius:6px;background:var(--surface2);border:1px solid var(--border);font-size:10px">insight-blue</span>
+      <span style="padding:4px 10px;border-radius:6px;background:var(--surface2);border:1px solid var(--border);font-size:10px">insight-box</span>
+      <span style="padding:4px 10px;border-radius:6px;background:var(--surface2);border:1px solid var(--border);font-size:10px">engines</span>
+      <span style="padding:4px 10px;border-radius:6px;background:var(--surface2);border:1px solid var(--border);font-size:10px">reqs</span>
+      <span style="padding:4px 10px;border-radius:6px;background:var(--surface2);border:1px solid var(--border);font-size:10px">code-block</span>
+      <span style="padding:4px 10px;border-radius:6px;background:var(--surface2);border:1px solid var(--border);font-size:10px">choices</span>
+    </div>
+  </div>
+</div>
+
+<!-- ━━━━━━━━━━━━━━━━━━ Slide 7 · 竞品优化路线 ━━━━━━━━━━━━━━━━━━ -->
+<div class="slide ch-compete" data-slide="7">
+  <div class="slide-label"><span class="dot"></span> 第 6 章</div>
+  <div class="slide-title">
+    GitHub 竞品分析<br><span style="color:#e87c50">5 个参考项目 · 8 项优化 · 6 项已落地</span>
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:16px">
+    <div style="padding:10px 12px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);font-size:11px;line-height:1.5">
+      <strong style="color:var(--primary)">AI-Reel-Factory</strong> ⭐1.5k<br>
+      <span style="color:var(--text3)">failover链 · 审批闸 · 合规</span>
+    </div>
+    <div style="padding:10px 12px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);font-size:11px;line-height:1.5">
+      <strong style="color:var(--accent)">genlab-platform</strong><br>
+      <span style="color:var(--text3)">LinUCB反馈闭环 · 多渠道 · 面板</span>
+    </div>
+    <div style="padding:10px 12px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);font-size:11px;line-height:1.5">
+      <strong style="color:#c06ff7">social-automation-suite</strong><br>
+      <span style="color:var(--text3)">品牌配置 · 病毒系数 · 日历</span>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:16px">
+    <div style="padding:10px 12px;border-radius:8px;background:rgba(34,199,139,.06);border:1px solid rgba(34,199,139,.2);font-size:11px;line-height:1.5">
+      <strong style="color:var(--text2)">tiktok-viral-factory</strong><br>
+      <span style="color:var(--text3)">7 Agent架构 · 防限流 · $50/月</span>
+    </div>
+    <div style="padding:10px 12px;border-radius:8px;background:rgba(34,199,139,.06);border:1px solid rgba(34,199,139,.2);font-size:11px;line-height:1.5">
+      <strong style="color:var(--text2)">ViralContent-Factory</strong><br>
+      <span style="color:var(--text3)">多LLM路由 · hook A/B测试</span>
+    </div>
+    <div style="padding:10px 12px;border-radius:8px;display:flex;align-items:center;justify-content:center;border:1px dashed var(--border);font-size:11px;color:var(--text3)">
+      ⚡ 7/12 分析 → 7/13 落地
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
+    <!-- P0 -->
+    <div style="border-radius:12px;border:2px solid var(--accent);overflow:hidden">
+      <div style="background:var(--accent);color:#000;padding:6px 14px;font-size:10px;font-weight:800;letter-spacing:1px">✅ P0 · 已完成</div>
+      <div style="padding:12px 14px;font-size:11px;line-height:1.6">
+        <strong>✅ Failover 链</strong><br><span style="color:var(--text3)">Azure TTS → 智谱TTS 降级<br>circuit_breaker.py 容错</span><br><br>
+        <strong>✅ 合规引用</strong><br><span style="color:var(--text3)">卡片 source_note 标注信源<br>render_combined.py</span>
+      </div>
+    </div>
+    <!-- P1 -->
+    <div style="border-radius:12px;border:2px solid var(--accent);overflow:hidden">
+      <div style="background:var(--accent);color:#000;padding:6px 14px;font-size:10px;font-weight:800;letter-spacing:1px">✅ P1 · 已完成</div>
+      <div style="padding:12px 14px;font-size:11px;line-height:1.6">
+        <strong>✅ 反馈闭环</strong><br><span style="color:var(--text3)">feedback_loop.py<br>log → compare → update_prefs</span><br><br>
+        <strong>✅ 质量预判</strong><br><span style="color:var(--text3)">item_matcher.score_and_rewrite<br>低分自动重写 + 人机确认</span>
+      </div>
+    </div>
+    <!-- P2 -->
+    <div style="border-radius:12px;border:2px solid var(--accent);overflow:hidden">
+      <div style="background:var(--accent);color:#000;padding:6px 14px;font-size:10px;font-weight:800;letter-spacing:1px">✅ P2 · 已完成</div>
+      <div style="padding:12px 14px;font-size:11px;line-height:1.6">
+        <strong>✅ 品牌管理</strong><br><span style="color:var(--text3)">brand_manager.py<br>switch_brand · visual_tokens</span><br><br>
+        <strong>✅ 内容日历</strong><br><span style="color:var(--text3)">content_calendar.py<br>schedule · mark_published</span>
+      </div>
+    </div>
+  </div>
+
+  <div style="margin-top:10px;display:flex;gap:10px;justify-content:center">
+    <div style="padding:6px 16px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);font-size:11px;color:var(--text3)">
+      ⬜ P3 Telegram 审批 Bot — 待排期
+    </div>
+    <div style="padding:6px 16px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);font-size:11px;color:var(--text3)">
+      ⬜ P3 运营数据面板 — 待排期
+    </div>
+  </div>
+</div>
+
+<!-- ━━━━━━━━━━━━━━━━━━ Slide 6 · 三个设计原则 ━━━━━━━━━━━━━━━━━━ -->
+<div class="slide ch-principles" data-slide="8">
+  <div class="slide-label"><span class="dot"></span> 第 7 章</div>
+  <div class="slide-title">
+    三条贯穿始终的<br><span style="color:var(--warn)">设计原则</span>
+  </div>
+
+  <div class="principles-list">
+    <div class="principle">
+      <div class="p-num n1">1</div>
+      <div>
+        <div class="p-title">生产与分发解耦</div>
+        <div class="p-desc">工厂产出内容资产，发布层只管平台适配。<br>加 YouTube Shorts？发布层加一个适配器，不动工厂代码。</div>
+      </div>
+    </div>
+    <div class="principle">
+      <div class="p-num n2">2</div>
+      <div>
+        <div class="p-title">视觉表现可插拔</div>
+        <div class="p-desc">颜色、字体、间距、布局模式 → 全在 brands/*.json。<br>品牌切换改一个 JSON 字段，设计 token 与业务逻辑彻底分离。</div>
+      </div>
+    </div>
+    <div class="principle">
+      <div class="p-num n3">3</div>
+      <div>
+        <div class="p-title">知识不依赖人，依赖系统</div>
+        <div class="p-desc">Skills 把经验变成可执行指令。偏好存文件，竞品自动追踪。<br>工具知道你要什么，不是你每次都告诉它。</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ━━━━━━━━━━━━━━━━━━ Slide 6 · 结语 ━━━━━━━━━━━━━━━━━━ -->
+<div class="slide ch-outro" data-slide="9">
+  <div class="slide-label"><span class="dot"></span> 总结</div>
+  <div class="slide-title">
+    从一封邮件<br>到<span class="hl">全平台发布</span>
+  </div>
+
+  <div class="big-quote">
+    自动化不是取代判断<br>
+    是替你省掉 <span class="em">90%</span> 的体力活<br>
+    保留最后 <span class="em2">10%</span> 的决策权
+  </div>
+
+  <div style="margin-top:28px;text-align:center">
+    <div style="font-size:14px;color:var(--text2);margin-bottom:4px">理解这三条原则，你搭出来的会比我的更好</div>
+    <div style="font-size:28px;font-weight:900;margin-top:12px;letter-spacing:-0.5px">
+      <span style="color:var(--primary)">程序员老崔</span>
+    </div>
+    <div class="tag-row" style="margin-top:14px">
+      <span class="tag blue">#AI自动化</span>
+      <span class="tag green">#内容工厂</span>
+      <span class="tag">#VibeCoding</span>
+    </div>
+  </div>
+</div>
+
+<!-- ── Navigation ── -->
+<div class="nav" id="nav"></div>
+
+<script>
+(function() {
+  const slides = document.querySelectorAll('.slide');
+  const total = slides.length;
+  const progress = document.getElementById('progress');
+  const nav = document.getElementById('nav');
+
+  let current = 0;
+
+  // Build nav dots
+  for (let i = 0; i < total; i++) {
+    const btn = document.createElement('button');
+    btn.textContent = i === 0 ? '🏠' : i;
+    if (i === 0) btn.classList.add('active');
+    btn.addEventListener('click', () => goTo(i));
+    nav.appendChild(btn);
+  }
+
+  function goTo(idx) {
+    if (idx < 0 || idx >= total) return;
+    slides[current].classList.remove('active');
+    nav.children[current].classList.remove('active');
+    current = idx;
+    slides[current].classList.add('active');
+    nav.children[current].classList.add('active');
+    progress.style.width = ((current + 1) / total * 100) + '%';
+    slides[current].scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ') {
+      e.preventDefault();
+      goTo(current + 1);
+    } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      goTo(current - 1);
+    } else if (e.key === 'Home') {
+      e.preventDefault(); goTo(0);
+    } else if (e.key === 'End') {
+      e.preventDefault(); goTo(total - 1);
+    }
+  });
+
+  // Touch swipe
+  let touchX = 0;
+  document.addEventListener('touchstart', e => { touchX = e.touches[0].clientX; });
+  document.addEventListener('touchend', e => {
+    const dx = e.changedTouches[0].clientX - touchX;
+    if (Math.abs(dx) > 50) { goTo(current + (dx < 0 ? 1 : -1)); }
+  });
+
+  // Init progress
+  progress.style.width = (1 / total * 100) + '%';
+})();
+</script>
+
+</body>
+</html>

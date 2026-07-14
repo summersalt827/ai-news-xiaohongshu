@@ -1,0 +1,63 @@
+{
+  "_meta": {
+    "name": "AI Skills 深度",
+    "id": "ai-skills-deep",
+    "description": "手动触发的深度长图文，单主题教程/白皮书风格",
+    "default": false,
+    "trigger": "manual"
+  },
+  "visual": {
+    "primary": "#2d2d2d",
+    "primary_light": "#555555",
+    "accent": "#d97757",
+    "accent_light": "#e8a786",
+    "background": "#faf9f5",
+    "card_bg": "#ffffff",
+    "card_border": "1.5px solid #e5ddd1",
+    "card_radius": "18px",
+    "card_shadow": "0 2px 12px rgba(0,0,0,0.04)",
+    "text_primary": "#1a1918",
+    "text_secondary": "#555555",
+    "tag_color": "#d97757",
+    "insight_bg": "#1a1918",
+    "insight_text": "#faf9f5"
+  },
+  "typography": {
+    "heading_font": "Inter, PingFang SC, Hiragino Sans GB, Microsoft YaHei, sans-serif",
+    "mono_font": "JetBrains Mono, SF Mono, monospace",
+    "heading_weight": "600",
+    "body_weight": "400",
+    "heading_size_px": 42,
+    "subheading_size_px": 20,
+    "body_size_px": 15,
+    "tag_size_px": 13
+  },
+  "card": {
+    "width": 1080,
+    "height": 1440,
+    "scale": 2,
+    "pages_per_issue": "4-5",
+    "info_box_count": "3-4",
+    "layout": "steps + insight-box"
+  },
+  "cover": {
+    "title": "",
+    "subtitle": "",
+    "tag": "AI SKILLS",
+    "caption": ""
+  },
+  "video": {
+    "bgm_preference": [],
+    "tts_voice": "yunxi",
+    "tts_speed": 1.5,
+    "cover_duration": 3.0,
+    "card_duration": 6.0,
+    "transition": 0.5
+  },
+  "social": {
+    "xhs_hashtags": ["#AI教程", "#AI工具", "#效率提升", "#AI实战", "#人工智能入门"],
+    "bilibili_hashtags": ["#AI教程", "#人工智能", "#效率工具", "#教程"],
+    "twitter_hashtags": ["#AI", "#Tutorial", "#AITools"],
+    "tone": "教学引导，有步骤有案例，像写白皮书，不卖焦虑"
+  }
+}

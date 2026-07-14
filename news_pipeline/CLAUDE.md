@@ -5,8 +5,8 @@
 从邮箱拉取 AI 新闻邮件 → 翻译 → 全网多源抓取 → Claude 精选内容 → 输出到 xhs_publish。
 
 两种发布场景：
-- **周一至周五**：精选 4 条 AI 新闻 + 1 条 GitHub 项目 → AI News 日报格式
-- **周六/周日**：单主题深度内容 → AI Skills 长图文格式
+- **周报（默认）**：精选 6-8 条 AI 新闻 + 3 条 GitHub 项目 → AI News 周报格式，覆盖近7天
+- **AI Skills 深度**：单主题深度内容 → 长图文格式（手动触发）
 
 **每次精选前必读** `.claude/preferences.md` — 用户的内容偏好和过滤规则。偏好文件改语料，不改代码。
 
@@ -57,16 +57,16 @@ python3 news_pipeline/fetch_ai_news.py
 ## 流程
 
 ```
-Weekday (AI News 日报):
-  1. IMAP 连接 163 → 搜索标题含 [AINews] 的邮件
+Weekday (AI News 周报 — 默认):
+  1. IMAP 连接 163 → 搜索近7天标题含 [AINews] 的邮件
   2. Claude 翻译（中英对照格式）
   3. 全网抓取（web_scraper）— 独立于邮件
-  4. Claude 精选 4 条 AI 新闻（item_matcher）
-  5. GitHub Trending 1 条（github_trending）
-  6. 终端交互确认（4 AI + 1 GitHub）
-  7. 输出 → xhs_publish/（4 卡片 + 封面）
+  4. Claude 精选 6-8 条 AI 新闻（item_matcher），按分类组织
+  5. GitHub Trending 3 条（github_trending，7天范围）
+  6. 终端交互确认
+  7. 输出 → xhs_publish/（卡片 + 封面 + 视频）
 
-Weekend (AI Skills 深度):
+AI Skills 深度 (手动触发):
   1. 全网抓取 + 邮件内容
   2. Claude 选一个深度话题
   3. 生成 xhs-skill 格式长图文（cover + p1~p4）

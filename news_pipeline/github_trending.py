@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fetch trending GitHub repositories created in the last 24 hours.
+"""Fetch trending GitHub repositories from the last 7 days.
 
 Uses GitHub Search API to find repos with highest star count among
 recently created projects, then distills them into xiaobai card format.
@@ -21,9 +21,9 @@ from claude_utils import call_claude, parse_json_lenient
 os.environ.setdefault("no_proxy", "*")
 
 DISTILL_PROMPT = """You are a curator for Chinese Xiaohongshu readers. Below is a list of
-GitHub repositories that are trending (fastest star growth in 24 hours).
+GitHub repositories that are trending (fastest star growth in the last 7 days).
 
-For the TOP repository, write a DETAILED card:
+For the TOP 3 repositories (most stars / most interesting), write a DETAILED card for each:
 1. title: catchy Chinese headline, 10-20 chars, Xiaohongshu style
 2. summary: 4-5 sentences explaining:
    - What this project does (in simple Chinese, use analogies)
@@ -34,20 +34,19 @@ For the TOP repository, write a DETAILED card:
 4. emoji: one relevant emoji
 5. raw_excerpt: "⭐ stars: X | 🔧 language: Y | 📦 project: owner/name"
 
-Return ONLY a JSON array with 1 item (the best repo):
-[{"title": "...", "summary": "...", "why_care": "...", "emoji": "...", "raw_excerpt": "..."}]"""
+Return ONLY a JSON array with up to 3 items (best repos):
+[{"title": "...", "summary": "...", "why_care": "...", "emoji": "...", "raw_excerpt": "..."}, ...]"""
 
 
 def _fetch_github_trending_raw() -> list[dict]:
-    """Fetch repos created in last 24h with most stars from GitHub Search API."""
-    yesterday = (date.today() - timedelta(days=1)).isoformat()
+    """Fetch repos created in last 7 days with most stars from GitHub Search API."""
+    last_week = (date.today() - timedelta(days=7)).isoformat()
 
-    # GitHub search: repos created since yesterday, sorted by stars
-    query = f"created:>={yesterday} stars:>=3"
+    query = f"created:>={last_week} stars:>=3"
     url = (
         f"https://api.github.com/search/repositories"
         f"?q={urllib.request.quote(query)}"
-        f"&sort=stars&order=desc&per_page=10"
+        f"&sort=stars&order=desc&per_page=20"
     )
 
     token = os.environ.get("GITHUB_TOKEN", "")
@@ -83,14 +82,11 @@ def _fetch_github_trending_raw() -> list[dict]:
 
 
 def _fetch_ossinsight_trending() -> list[dict]:
-    """Fallback: fetch trending repos from ossinsight.io API.
-
-    Returns list of dicts compatible with _fetch_github_trending_raw.
-    """
+    """Fallback: fetch trending repos from ossinsight.io API."""
     try:
         url = (
             "https://api.ossinsight.io/v1/collections/trending_repo"
-            "?period=past_24_hours&limit=10"
+            "?period=past_7_days&limit=20"
         )
         req = urllib.request.Request(
             url,
@@ -140,7 +136,7 @@ def fetch_trending_repos() -> list[dict]:
             unique.append(r)
 
     print(f"  [github] {len(unique)} unique trending repos")
-    return unique[:8]
+    return unique[:15]
 
 
 def format_github_for_claude(repos: list[dict]) -> str:
@@ -188,7 +184,7 @@ def distill_github_items(repos: list[dict]) -> list[dict[str, str]]:
         if item["title"].strip():
             items.append(item)
 
-    return items[:1]
+    return items[:3]
 
 
 def _fallback_github_items(repos: list[dict]) -> list[dict[str, str]]:
@@ -212,15 +208,15 @@ def _fallback_github_items(repos: list[dict]) -> list[dict[str, str]]:
 
 
 def pick_best_github(repos: list[dict]) -> list[dict[str, str]]:
-    """Return exactly 1 best GitHub item, or empty list."""
+    """Return top 3 GitHub items for weekly roundup."""
     items = distill_github_items(repos)
-    return items[:1]
+    return items[:3]
 
 
 def format_github_confirmation(items: list[dict[str, str]]) -> str:
     """Format GitHub items for terminal confirmation display."""
     lines = [f"\n{'─' * 58}"]
-    lines.append(f"  ⭐ GitHub Trending (24h star增速最快) — {len(items)} 条")
+    lines.append(f"  ⭐ GitHub Trending (7天 star增速最快) — {len(items)} 条")
     lines.append(f"{'─' * 58}")
 
     for i, item in enumerate(items, 1):

@@ -1,0 +1,62 @@
+{
+  "_meta": {
+    "name": "AI News 周报",
+    "id": "ai-news-weekly",
+    "description": "每周日发布AI新闻周报，6-8条精选+3条GitHub必看",
+    "default": true
+  },
+  "visual": {
+    "primary": "#124783",
+    "primary_light": "#1c4f8d",
+    "accent": "#1ca77a",
+    "accent_light": "#138d78",
+    "background": "linear-gradient(90deg,#f9fafb 0%,#ffffff 50%,#f9fafb 100%)",
+    "card_bg": "#ffffff",
+    "card_border": "4px solid #1c4f8d",
+    "card_radius": "24px",
+    "card_shadow": "14px 14px 0 rgba(0,0,0,.07)",
+    "text_primary": "#163f77",
+    "text_secondary": "#60748a",
+    "tag_color": "#1ca77a",
+    "left_card_bg": "#e8f0fa",
+    "left_card_github_bg": "#e8f5e9"
+  },
+  "typography": {
+    "heading_font": "Noto Sans SC, PingFang SC, Microsoft YaHei, sans-serif",
+    "mono_font": "Space Mono, monospace",
+    "heading_weight": "900",
+    "body_weight": "500",
+    "heading_size_px": 84,
+    "subheading_size_px": 28,
+    "body_size_px": 20,
+    "tag_size_px": 24
+  },
+  "card": {
+    "width": 1080,
+    "height": 1440,
+    "scale": 2,
+    "cards_per_issue": "6-8",
+    "github_items": 3,
+    "info_box_labels": ["发生了什么？", "深入了解一下", "为什么值得关注"]
+  },
+  "cover": {
+    "title": "本周 AI 速览",
+    "subtitle": "最值得关注的 AI 动态",
+    "tag": "AI NEWS WEEKLY",
+    "caption": "本周精选 {n} 条 AI 新闻 · 深度解读"
+  },
+  "video": {
+    "bgm_preference": ["mixkit_132.mp3", "mixkit_371.mp3"],
+    "tts_voice": "xiaoxiao",
+    "tts_speed": 1.8,
+    "cover_duration": 3.0,
+    "card_duration": 5.0,
+    "transition": 0.4
+  },
+  "social": {
+    "xhs_hashtags": ["#AI新闻", "#AI周报", "#人工智能", "#科技资讯", "#每周AI", "#GitHub开源"],
+    "bilibili_hashtags": ["#AI新闻", "#人工智能", "#AI周报", "#科技"],
+    "twitter_hashtags": ["#AI", "#AINews", "#TechNews"],
+    "tone": "专业但轻松，小白友好，有深度但不装"
+  }
+}

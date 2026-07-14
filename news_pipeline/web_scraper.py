@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import socket
 import time
 import urllib.parse
 from datetime import date, timedelta
@@ -23,6 +24,53 @@ import urllib.request
 import xml.etree.ElementTree as ET
 
 os.environ.setdefault("no_proxy", "*")
+socket.setdefaulttimeout(15)  # guard against TCP SYN_SENT hangs (e.g. blocked IPs)
+
+# ── Retry + Circuit Breaker utilities ─────────────────────────
+
+from circuit_breaker import get_breaker
+
+
+def _http_request(url: str, timeout: int = 15, headers: dict | None = None,
+                  max_retries: int = 2) -> bytes | None:
+    """HTTP GET with exponential backoff retry. Returns body or None on failure."""
+    import time as _time
+    base_delay = 1.5
+
+    for attempt in range(max_retries + 1):
+        try:
+            req = urllib.request.Request(url, headers=headers or {})
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return resp.read()
+        except Exception as exc:
+            if attempt < max_retries:
+                delay = base_delay * (2 ** attempt)
+                print(f"  [http] retry {attempt+1}/{max_retries} in {delay:.0f}s: {url[:60]} ({exc})")
+                _time.sleep(delay)
+            else:
+                print(f"  [http] exhausted retries for {url[:60]}: {exc}")
+    return None
+
+
+def _source_safe(source_name: str, func, *args, **kwargs):
+    """Call a scraping function safely — non-blocking on failure, with circuit breaker.
+
+    Returns func() result on success, empty list on failure.
+    Trips circuit breaker after repeated failures.
+    """
+    cb = get_breaker(f"scraper:{source_name}", failure_threshold=4, cooldown_seconds=120)
+    if not cb.allow_call():
+        print(f"  [{source_name}] circuit OPEN, skipping")
+        return []
+
+    try:
+        result = func(*args, **kwargs)
+        cb.on_success()
+        return result
+    except Exception as exc:
+        print(f"  [{source_name}] failed (non-blocking): {exc}")
+        cb.on_failure()
+        return []
 
 # ── AI relevance keywords ─────────────────────────────────────
 
@@ -205,13 +253,10 @@ def _fetch_hackernews(query: str = "AI", hours_back: int = 48, limit: int = 10) 
         f"&hitsPerPage={limit}"
     )
 
-    req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
-    try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-    except Exception as exc:
-        print(f"  [hn] API failed: {exc}")
+    body = _http_request(url, timeout=15, headers={"User-Agent": _USER_AGENT})
+    if body is None:
         return []
+    data = json.loads(body.decode("utf-8"))
 
     results: list[dict] = []
     for hit in data.get("hits", []):
@@ -295,7 +340,6 @@ def _fetch_reddit_ai() -> list[dict]:
 # ═══════════════════════════════════════════════════════════════
 
 _NITTER_INSTANCES = [
-    "https://nitter.net",
     "https://nitter.privacydev.net",
 ]
 
@@ -376,13 +420,10 @@ def _fetch_arxiv(max_results: int = 10) -> list[dict]:
         f"&max_results={max_results}"
     )
 
-    req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
-    try:
-        with urllib.request.urlopen(req, timeout=20) as resp:
-            xml_data = resp.read().decode("utf-8")
-    except Exception as exc:
-        print(f"  [arxiv] API failed: {exc}")
+    body = _http_request(url, timeout=20, headers={"User-Agent": _USER_AGENT})
+    if body is None:
         return []
+    xml_data = body.decode("utf-8")
 
     ns = {"atom": "http://www.w3.org/2005/Atom"}
     try:
@@ -462,39 +503,27 @@ def scrape_broad_ai_news() -> list[dict]:
 
     # ── Hacker News ──
     print("  [hn] fetching...")
-    try:
-        for item in _fetch_hackernews("AI", hours_back=48, limit=10):
-            item["source_label"] = "hackernews"
-            _add(item)
-    except Exception as exc:
-        print(f"  [hn] failed (non-blocking): {exc}")
+    for item in _source_safe("hackernews", _fetch_hackernews, "AI", 48, 10):
+        item["source_label"] = "hackernews"
+        _add(item)
 
     # ── Reddit ──
     print("  [reddit] fetching...")
-    try:
-        for item in _fetch_reddit_ai():
-            item["source_label"] = "reddit"
-            _add(item)
-    except Exception as exc:
-        print(f"  [reddit] failed (non-blocking): {exc}")
+    for item in _source_safe("reddit", _fetch_reddit_ai):
+        item["source_label"] = "reddit"
+        _add(item)
 
     # ── Twitter/X ──
     print("  [twitter] fetching...")
-    try:
-        for item in _fetch_twitter():
-            item["source_label"] = "twitter"
-            _add(item)
-    except Exception as exc:
-        print(f"  [twitter] failed (non-blocking): {exc}")
+    for item in _source_safe("twitter", _fetch_twitter):
+        item["source_label"] = "twitter"
+        _add(item)
 
     # ── ArXiv ──
     print("  [arxiv] fetching...")
-    try:
-        for item in _fetch_arxiv(max_results=8):
-            item["source_label"] = "arxiv"
-            _add(item)
-    except Exception as exc:
-        print(f"  [arxiv] failed (non-blocking): {exc}")
+    for item in _source_safe("arxiv", _fetch_arxiv, 8):
+        item["source_label"] = "arxiv"
+        _add(item)
 
     print(f"  [scraper] raw total: {len(all_results)} items")
 

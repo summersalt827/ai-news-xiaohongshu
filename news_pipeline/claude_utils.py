@@ -1,16 +1,47 @@
 #!/usr/bin/env python3
-"""Shared Claude API helper — single implementation used by all modules."""
+"""Shared Claude API helper — multi-endpoint failover with retry + circuit breaker.
+
+Reads up to 3 sets of API credentials from environment variables.
+Tries each endpoint in order; on failure, retries with exponential backoff,
+then falls through to the next endpoint.  Returns empty string only
+when all endpoints are exhausted.
+
+Circuit breaker: after 5 consecutive failures on an endpoint, it is skipped
+for 60s to avoid hammering a degraded service.
+
+Endpoint config:
+  Primary:   ANTHROPIC_API_KEY / ANTHROPIC_BASE_URL / ANTHROPIC_MODEL
+  Fallback:  ANTHROPIC_API_KEY_2 / ANTHROPIC_BASE_URL_2 / ANTHROPIC_MODEL_2
+  Fallback:  ANTHROPIC_API_KEY_3 / ANTHROPIC_BASE_URL_3 / ANTHROPIC_MODEL_3
+"""
 
 from __future__ import annotations
 
 import json
 import os
+import time
 import urllib.request
 from typing import Any
 
-_ANTHROPIC_BASE_URL = os.environ.get("ANTHROPIC_BASE_URL", "https://api.anthropic.com")
-_ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-_ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6")
+from circuit_breaker import get_breaker
+
+
+def _build_endpoints() -> list[dict[str, str]]:
+    """Build ordered endpoint list from environment variables."""
+    endpoints: list[dict[str, str]] = []
+    for suffix in ("", "_2", "_3"):
+        key = os.environ.get(f"ANTHROPIC_API_KEY{suffix}", "")
+        base = os.environ.get(
+            f"ANTHROPIC_BASE_URL{suffix}",
+            "https://api.anthropic.com",
+        )
+        model = os.environ.get(
+            f"ANTHROPIC_MODEL{suffix}",
+            "claude-sonnet-4-6",
+        )
+        if key:
+            endpoints.append({"key": key, "base_url": base, "model": model})
+    return endpoints
 
 
 def call_claude(
@@ -19,47 +50,86 @@ def call_claude(
     max_tokens: int = 4096,
     timeout: int = 120,
 ) -> str:
-    """Call Claude API and return the text response.
+    """Call Claude API with multi-endpoint failover, exponential backoff, circuit breaker.
 
-    Returns empty string on any failure — callers should handle gracefully.
+    Chain: endpoint-1 → retry(exp backoff) → endpoint-2 → retry → endpoint-3 → retry → "".
+    Returns empty string only when ALL endpoints are exhausted.
+    Each endpoint has its own circuit breaker — tripped endpoints are skipped.
     """
-    if not _ANTHROPIC_API_KEY:
+    endpoints = _build_endpoints()
+    if not endpoints:
         return ""
 
     payload: dict[str, Any] = {
-        "model": _ANTHROPIC_MODEL,
         "max_tokens": max_tokens,
         "system": system_prompt,
         "messages": [{"role": "user", "content": user_text}],
     }
-    data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    api_url = f"{_ANTHROPIC_BASE_URL.rstrip('/')}/v1/messages"
 
-    req = urllib.request.Request(
-        api_url,
-        data=data,
-        headers={
-            "Content-Type": "application/json; charset=utf-8",
-            "x-api-key": _ANTHROPIC_API_KEY,
-            "anthropic-version": "2023-06-01",
-        },
-        method="POST",
-    )
+    base_delay = 2.0  # seconds
 
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            body = json.loads(resp.read().decode("utf-8"))
-    except Exception as exc:
-        print(f"  [claude] API call failed: {exc}")
-        return ""
+    for i, ep in enumerate(endpoints):
+        label = ep["base_url"].split("//")[-1].split("/")[0][:25]
 
-    parts: list[str] = []
-    for block in body.get("content", []):
-        if block.get("type") == "text":
-            parts.append(block["text"])
-        elif block.get("type") == "thinking":
+        # Check circuit breaker for this endpoint
+        cb = get_breaker(f"claude:{label}")
+        if not cb.allow_call():
+            print(
+                f"  [claude] endpoint {i+1} ({label}) circuit OPEN "
+                f"({cb.stats['consecutive_failures']} failures, skipping)"
+            )
             continue
-    return "\n\n".join(parts)
+
+        api_url = f"{ep['base_url'].rstrip('/')}/v1/messages"
+
+        for attempt in range(3):  # initial + 2 retries with exponential backoff
+            if attempt > 0:
+                delay = base_delay * (2 ** (attempt - 1))  # 2s, 4s
+                print(
+                    f"  [claude] endpoint {i+1} ({label}) "
+                    f"retry {attempt}/{2} in {delay:.0f}s..."
+                )
+                time.sleep(delay)
+
+            try:
+                req_payload = {**payload, "model": ep["model"]}
+                data = json.dumps(req_payload, ensure_ascii=False).encode("utf-8")
+                req = urllib.request.Request(
+                    api_url,
+                    data=data,
+                    headers={
+                        "Content-Type": "application/json; charset=utf-8",
+                        "x-api-key": ep["key"],
+                        "anthropic-version": "2023-06-01",
+                    },
+                    method="POST",
+                )
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    body = json.loads(resp.read().decode("utf-8"))
+
+                parts: list[str] = []
+                for block in body.get("content", []):
+                    if block.get("type") == "text":
+                        parts.append(block["text"])
+                    elif block.get("type") == "thinking":
+                        continue
+                result = "\n\n".join(parts)
+
+                cb.on_success()
+                if i > 0:
+                    print(f"  [claude] recovered on endpoint {i+1} ({label})")
+                return result
+
+            except Exception as exc:
+                tag = f"retry {attempt}/{2}" if attempt > 0 else "attempt 1"
+                print(
+                    f"  [claude] endpoint {i+1} ({label}) {tag} failed: {exc}"
+                )
+                cb.on_failure()
+                if i < len(endpoints) - 1 or attempt < 2:
+                    continue  # try next retry or next endpoint
+
+    return ""
 
 
 def parse_json_lenient(raw: str) -> list | dict | None:
